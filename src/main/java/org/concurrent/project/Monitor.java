@@ -28,7 +28,7 @@ public class Monitor implements MonitorInterface {
         entry = new Semaphore(1, true);
         this.rdp = rdp;
         Queues = new Queues();
-        policy = new Policy();
+        policy = new Policy(true);
         successfullyFired = new ArrayList<>();
     }
 
