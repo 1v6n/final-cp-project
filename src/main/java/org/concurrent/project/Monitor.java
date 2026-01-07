@@ -14,19 +14,30 @@ public class Monitor implements MonitorInterface {
     private final RdP rdp;
     private final Policy policy;
     private final ArrayList<String> successfullyFired;
+    private final LogService logger;
+
 
     /**
-     * Constructor.
-     * <p>
-     * Este método constructor crea una instancia del monitor que controla la red de Petri (RdP).
-     * Inicializa los semáforos de entrada, las colas necesarias para manejar las transiciones,
-     * y la política que se aplicará en caso de conflictos dentro de la red.
-     *
-     * @param rdp La red de Petri que será controlada por el monitor.
-     */
-    Monitor(RdP rdp) {
+    * Constructor del monitor.
+    *
+    * <p>
+    * Crea una instancia del monitor que controla el acceso concurrente a la red de Petri (RdP).
+    * El monitor garantiza exclusión mutua durante el disparo de transiciones, gestiona las colas
+    * de espera asociadas a cada transición y aplica la política de resolución de conflictos.
+    *
+    * <p>
+    * Además, recibe un servicio de logging que permite registrar cada disparo efectivo de transición
+    * de manera consistente, asegurando que los eventos registrados reflejen un estado válido del
+    * sistema y un marcado coherente de la red.
+    *
+    * @param rdp    La red de Petri que será controlada por el monitor.
+    * @param logger Servicio de logging utilizado para registrar los disparos de transiciones y eventos
+    *               relevantes del sistema de forma serializada.
+    */
+    Monitor(RdP rdp, LogService logger) {
         entry = new Semaphore(1, true);
         this.rdp = rdp;
+        this.logger = logger;
         Queues = new Queues();
         policy = new Policy(true);
         successfullyFired = new ArrayList<>();
@@ -125,6 +136,19 @@ public class Monitor implements MonitorInterface {
         successfullyFired.add("T" + transition);
         printSuccessfullyFired();
         System.out.println("Transition " + transition + " fired successfully by " + Thread.currentThread().getName());
+
+        // LOG
+        int[] marking = snapshotMarkingAsIntArray();
+        logger.logFire(Thread.currentThread().getName(), transition, true, marking, "NA");
+    }
+
+    private int[] snapshotMarkingAsIntArray() {
+        DMatrixRMaj m = rdp.getMarcadoActual();
+        int[] out = new int[m.numCols];
+        for (int i = 0; i < m.numCols; i++) {
+            out[i] = (int) Math.round(m.get(0, i));
+        }
+        return out;
     }
 
     private void printSuccessfullyFired() {
