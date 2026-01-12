@@ -142,7 +142,7 @@ public class RdP {
         return Incidencia;
     }
 
-    public DMatrixRMaj getSensibilizadas() {
+    public DMatrixRMaj getSensitized() {
         return Sensibilizadas;
     }
 }

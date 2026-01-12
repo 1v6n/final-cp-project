@@ -14,6 +14,7 @@ public class Monitor implements MonitorInterface {
     private final RdP rdp;
     private final Policy policy;
     private final ArrayList<String> successfullyFired;
+    private final TimeRestrictions time;
 
     /**
      * Constructor.
@@ -30,6 +31,15 @@ public class Monitor implements MonitorInterface {
         Queues = new Queues();
         policy = new Policy(true);
         successfullyFired = new ArrayList<>();
+        time = new TimeRestrictions();
+
+        // Transiciones con restricciones de tiempo {T1, T4, T5, T8, T9, T10
+        time.setTimedTransition(1, 130);
+        time.setTimedTransition(4, 30);
+        time.setTimedTransition(5, 20);
+        time.setTimedTransition(8, 50);
+        time.setTimedTransition(9, 60);
+        time.setTimedTransition(10, 70);
     }
 
     /**
@@ -58,33 +68,39 @@ public class Monitor implements MonitorInterface {
     @Override
     public boolean fireTransition(int transition) {
         boolean isSensitized = false;
-        while (true) { // Retry until the transition is successfully fired
+        while (true) {
             try {
-                catchMonitor(); // Acquire the monitor
+                catchMonitor();
                 System.out.println(Thread.currentThread().getName() + " in monitor.");
-                isSensitized = (rdp.getSensibilizadas().get(0, transition) == 1);
+                isSensitized = (rdp.getSensitized().get(0, transition) == 1);
 
-                if (isSensitized) {
-                    // k = true
+                if (isSensitized && time.canFire(transition)) {
                     fireAndReleaseTransition(transition);
-                    return true; // Transition fired successfully
+                    time.reset(transition);
+                    return true;
+
+                } else if (isSensitized) {
+                    long waitTime = time.getRemainingTime(transition);
+                    System.out.println("T" + transition + " waiting " + waitTime + "ms. in " + Thread.currentThread().getName());
+                    releaseMonitor();
+                    Thread.sleep(Math.min(waitTime, 10)); // Sleep briefly and retry
+                    continue;
 
                 } else {
-                    // k = false: Release the monitor and block on the semaphore
-                    System.out.println("Transicion " + transition + " no sensibilizada. Esperando en semáforo: " + Thread.currentThread().getName());
+                    System.out.println("T" + transition + " no sensibilizada. Esperando en semáforo: " + Thread.currentThread().getName());
                     Queues.incrementWaitingCount(transition);
-                    releaseMonitor(); // Release the monitor before blocking
-                    Queues.getSemaphoreForTransition(transition).acquire(); // Block until transition is sensitized
+                    releaseMonitor();
+                    Queues.getSemaphoreForTransition(transition).acquire();
+                    continue;
                 }
 
             } catch (InterruptedException e) {
-                Thread.currentThread().interrupt(); // Restore interrupted status
-                e.printStackTrace();
-                return false; // Exit on interruption
+                Thread.currentThread().interrupt();
+                return false;
 
             } finally {
-                if (isSensitized) {
-                    releaseMonitor(); // Ensure monitor is released only after firing
+                if (isSensitized && entry.availablePermits() == 0) {
+                    releaseMonitor();
                 }
             }
         }
@@ -121,7 +137,7 @@ public class Monitor implements MonitorInterface {
     private void fireAndReleaseTransition(int transition) {
         DMatrixRMaj firingVector = createFiringVector(transition);
         rdp.fireTransition(firingVector, transition);
-        updateSensibilizadasAndRelease();
+        updateSensitizedAndRelease();
         successfullyFired.add("T" + transition);
         printSuccessfullyFired();
         System.out.println("Transition " + transition + " fired successfully by " + Thread.currentThread().getName());
@@ -160,12 +176,11 @@ public class Monitor implements MonitorInterface {
      * <p>El método utiliza operaciones de matriz de la biblioteca EJML para realizar
      * multiplicaciones elemento por elemento de manera eficiente.
      */
-    private void updateSensibilizadasAndRelease() {
-
-        DMatrixRMaj sensibilizadas = rdp.getSensibilizadas();
+    private void updateSensitizedAndRelease() {
+        DMatrixRMaj sensitized = rdp.getSensitized();
         DMatrixRMaj WaitingCounts = Queues.getWaitingCounts();
-        DMatrixRMaj result = new DMatrixRMaj(sensibilizadas.numRows, sensibilizadas.numCols);
-        CommonOps_DDRM.elementMult(sensibilizadas, WaitingCounts, result);
+        DMatrixRMaj result = new DMatrixRMaj(sensitized.numRows, sensitized.numCols);
+        CommonOps_DDRM.elementMult(sensitized, WaitingCounts, result);
         List<Integer> availableTransitions = new ArrayList<>();
 
         for (int i = 0; i < result.numCols; i++) {
@@ -175,13 +190,14 @@ public class Monitor implements MonitorInterface {
         }
 
         if (!availableTransitions.isEmpty()) {
-            int randomIndex = availableTransitions.get(new Random().nextInt(availableTransitions.size()));
-            System.out.printf("Transition %d sensitized and selected. Releasing semaphore.%n", randomIndex);
-            Queues.decrementWaitingCount(randomIndex);
-            System.out.printf("Decremented waiting count for transition %d. New count: %.0f%n",
-                    randomIndex, Queues.getWaitingCounts().get(0, randomIndex));
-            Queues.getSemaphoreForTransition(randomIndex).release();
-
+            for (int transitionToRelease : availableTransitions) {
+                time.markEnabled(transitionToRelease);
+                System.out.printf("Transition %d sensitized. Releasing semaphore.%n", transitionToRelease);
+                Queues.decrementWaitingCount(transitionToRelease);
+                System.out.printf("Decremented waiting count for transition %d. New count: %.0f%n",
+                        transitionToRelease, Queues.getWaitingCounts().get(0, transitionToRelease));
+                Queues.getSemaphoreForTransition(transitionToRelease).release();
+            }
         } else {
             System.out.println("No available transitions to release.");
         }
