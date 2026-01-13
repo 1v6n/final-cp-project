@@ -15,6 +15,7 @@ public class Monitor implements MonitorInterface {
     private final Policy policy;
     private final ArrayList<String> successfullyFired;
     private final LogService logger;
+    private final List<Invariants.PInvariant> pInvariants;
 
 
     /**
@@ -38,6 +39,7 @@ public class Monitor implements MonitorInterface {
         entry = new Semaphore(1, true);
         this.rdp = rdp;
         this.logger = logger;
+        this.pInvariants = Invariants.defaultPInvariants();
         Queues = new Queues();
         policy = new Policy(true);
         successfullyFired = new ArrayList<>();
@@ -132,9 +134,32 @@ public class Monitor implements MonitorInterface {
         updateSensibilizadasAndRelease();
         successfullyFired.add("T" + transition);
 
-        // LOG
-        int[] marking = snapshotMarkingAsIntArray();
-        logger.logFire(Thread.currentThread().getName(), transition, true, marking, "NA");
+        DMatrixRMaj markingMatrix = rdp.getMarcadoActual();
+        List<Invariants.PInvariantResult> results =
+                Invariants.checkPInvariants(markingMatrix, pInvariants);
+
+        String pinv = "OK";
+        boolean fail = false;
+        Invariants.PInvariantResult firstFail = null;
+
+        for (Invariants.PInvariantResult r : results) {
+            if (!r.ok()) {
+                fail = true;
+                firstFail = r;
+                pinv = "FAIL(" + r.name() + ",got=" + r.got() + ",exp=" + r.expected() + ")";
+                break; 
+            }
+        }
+
+        if (fail && firstFail != null) {
+            logger.logEvent(Thread.currentThread().getName(),
+                    "PINV_FAIL name=" + firstFail.name()
+                            + " got=" + firstFail.got()
+                            + " exp=" + firstFail.expected());
+        }
+
+        logger.logFire(Thread.currentThread().getName(), transition, true,
+                snapshotMarkingAsIntArray(), pinv);
     }
 
     private int[] snapshotMarkingAsIntArray() {
