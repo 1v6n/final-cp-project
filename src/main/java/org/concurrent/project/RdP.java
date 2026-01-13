@@ -89,16 +89,13 @@ public class RdP {
 
         for (int i = 0; i < change.numRows; i++) {
             if (MarcadoActual.get(0, i) + change.get(i, 0) < 0) {
-                System.out.println("No se puede disparar la transición por insuficiencia de tokens.");
                 return;
             }
         }
 
         CommonOps_DDRM.addEquals(MarcadoActual, CommonOps_DDRM.transpose(change, null));
         transicionesSensibilizadas();
-        System.out.println(
-                "Transición " + transition + " disparada por " + Thread.currentThread().getName());
-    }
+   }
 
     /**
      * Actualiza el estado de sensibilización de las transiciones.

@@ -96,9 +96,8 @@ public class LogService implements AutoCloseable {
         try {
             writer.write(line);
             writer.newLine();
-            writer.flush(); // simple y seguro para el TP
+            writer.flush(); 
         } catch (IOException e) {
-            // No rompas la ejecución del TP por un fallo de log, pero dejá evidencia
             System.err.println("LOG WRITE ERROR: " + e.getMessage());
         }
     }

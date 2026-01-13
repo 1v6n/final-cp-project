@@ -72,7 +72,6 @@ public class Monitor implements MonitorInterface {
         while (true) { // Retry until the transition is successfully fired
             try {
                 catchMonitor(); // Acquire the monitor
-                System.out.println(Thread.currentThread().getName() + " in monitor.");
                 isSensitized = (rdp.getSensibilizadas().get(0, transition) == 1);
 
                 if (isSensitized) {
@@ -82,7 +81,6 @@ public class Monitor implements MonitorInterface {
 
                 } else {
                     // k = false: Release the monitor and block on the semaphore
-                    System.out.println("Transicion " + transition + " no sensibilizada. Esperando en semáforo: " + Thread.currentThread().getName());
                     Queues.incrementWaitingCount(transition);
                     releaseMonitor(); // Release the monitor before blocking
                     Queues.getSemaphoreForTransition(transition).acquire(); // Block until transition is sensitized
@@ -106,7 +104,6 @@ public class Monitor implements MonitorInterface {
     }
 
     private void releaseMonitor() {
-        System.out.println("Releasing monitor");
         entry.release();
     }
 
@@ -134,8 +131,6 @@ public class Monitor implements MonitorInterface {
         rdp.fireTransition(firingVector, transition);
         updateSensibilizadasAndRelease();
         successfullyFired.add("T" + transition);
-        printSuccessfullyFired();
-        System.out.println("Transition " + transition + " fired successfully by " + Thread.currentThread().getName());
 
         // LOG
         int[] marking = snapshotMarkingAsIntArray();
@@ -149,10 +144,6 @@ public class Monitor implements MonitorInterface {
             out[i] = (int) Math.round(m.get(0, i));
         }
         return out;
-    }
-
-    private void printSuccessfullyFired() {
-        System.out.println("Successfully fired transitions: " + successfullyFired);
     }
 
     /**
@@ -200,14 +191,9 @@ public class Monitor implements MonitorInterface {
 
         if (!availableTransitions.isEmpty()) {
             int randomIndex = availableTransitions.get(new Random().nextInt(availableTransitions.size()));
-            System.out.printf("Transition %d sensitized and selected. Releasing semaphore.%n", randomIndex);
             Queues.decrementWaitingCount(randomIndex);
-            System.out.printf("Decremented waiting count for transition %d. New count: %.0f%n",
-                    randomIndex, Queues.getWaitingCounts().get(0, randomIndex));
             Queues.getSemaphoreForTransition(randomIndex).release();
 
-        } else {
-            System.out.println("No available transitions to release.");
-        }
+        } 
     }
 }

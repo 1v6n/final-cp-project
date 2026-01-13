@@ -50,10 +50,6 @@ public class Main {
 
             thread0.join();
             for (Thread thread : invariantThreads) thread.join();
-
-            System.out.println("All threads have completed.");
-            System.out.println("Log written to: " + logPath.toAbsolutePath());
-
         } catch (Exception e) {
             e.printStackTrace();
         }
