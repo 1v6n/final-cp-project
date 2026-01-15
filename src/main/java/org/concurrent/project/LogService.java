@@ -36,7 +36,7 @@ public class LogService implements AutoCloseable {
                 logPath,
                 StandardCharsets.UTF_8,
                 StandardOpenOption.CREATE,
-                StandardOpenOption.APPEND
+                StandardOpenOption.TRUNCATE_EXISTING
         );
     }
 

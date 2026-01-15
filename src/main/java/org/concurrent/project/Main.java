@@ -12,8 +12,7 @@ public class Main {
     public static void main(String[] args) {
         RdP rdP = new RdP();
 
-        String stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-        Path logPath = Path.of("logs", "run_" + stamp + ".log");
+        Path logPath = Path.of("logs", "run.log"); 
 
         try (LogService logger = new LogService(logPath)) {
             Monitor monitor = new Monitor(rdP, logger);
