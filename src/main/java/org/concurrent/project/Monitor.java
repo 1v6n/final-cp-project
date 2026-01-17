@@ -5,21 +5,21 @@ import org.ejml.dense.row.CommonOps_DDRM;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Random;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public class Monitor implements MonitorInterface {
     private final Semaphore entry;
     private final Queues Queues;
     private final RdP rdp;
     private final Policy policy;
-    private final ArrayList<String> successfullyFired;
+    private final CopyOnWriteArrayList<String> successfullyFired;
     private final TimeRestrictions time;
 
     /**
      * Constructor.
      * <p>
-     * Este método constructor crea una instancia del monitor que controla la red de Petri (RdP).
+     * Este metodo constructor crea una instancia del monitor que controla la red de Petri (RdP).
      * Inicializa los semáforos de entrada, las colas necesarias para manejar las transiciones,
      * y la política que se aplicará en caso de conflictos dentro de la red.
      *
@@ -30,27 +30,34 @@ public class Monitor implements MonitorInterface {
         this.rdp = rdp;
         Queues = new Queues();
         policy = new Policy(true);
-        successfullyFired = new ArrayList<>();
+        successfullyFired = new CopyOnWriteArrayList<>();
         time = new TimeRestrictions();
 
-        // Transiciones con restricciones de tiempo {T1, T4, T5, T8, T9, T10
+        // Transiciones con restricciones de tiempo {T1, T4, T5, T8, T9, T10}
         time.setTimedTransition(1, 130);
         time.setTimedTransition(4, 30);
         time.setTimedTransition(5, 20);
         time.setTimedTransition(8, 50);
         time.setTimedTransition(9, 60);
         time.setTimedTransition(10, 70);
+
+        time.markEnabled(1);
+        time.markEnabled(4);
+        time.markEnabled(5);
+        time.markEnabled(8);
+        time.markEnabled(9);
+        time.markEnabled(10);
     }
 
     /**
      * Intenta disparar la transición especificada de forma segura y bloqueante.
      *
-     * <p>Este método realiza un intento de disparar una transición sensibilizada en un modelo concurrente.
+     * <p>Este metodo realiza un intento de disparar una transición sensibilizada en un modelo concurrente.
      * Si la transición no está sensibilizada, el hilo actual se bloquea en un semáforo hasta que la transición
-     * esté disponible para dispararse. El método gestiona correctamente el acceso concurrente mediante el uso
+     * esté disponible para dispararse. El metodo gestiona correctamente el acceso concurrente mediante el uso
      * de un monitor y semáforos asociados a las transiciones.
      *
-     * <p>Las principales operaciones del método son:
+     * <p>Las principales operaciones del metodo son:
      * <ul>
      *   <li>Adquirir el monitor para sincronizar el acceso al modelo.</li>
      *   <li>Verificar si la transición está sensibilizada.</li>
@@ -68,6 +75,7 @@ public class Monitor implements MonitorInterface {
     @Override
     public boolean fireTransition(int transition) {
         boolean isSensitized = false;
+
         while (true) {
             try {
                 catchMonitor();
@@ -82,16 +90,13 @@ public class Monitor implements MonitorInterface {
                 } else if (isSensitized) {
                     long waitTime = time.getRemainingTime(transition);
                     System.out.println("T" + transition + " waiting " + waitTime + "ms. in " + Thread.currentThread().getName());
+                    Thread.sleep(waitTime);
                     releaseMonitor();
-                    Thread.sleep(Math.min(waitTime, 10)); // Sleep briefly and retry
-                    continue;
-
                 } else {
                     System.out.println("T" + transition + " no sensibilizada. Esperando en semáforo: " + Thread.currentThread().getName());
                     Queues.incrementWaitingCount(transition);
                     releaseMonitor();
                     Queues.getSemaphoreForTransition(transition).acquire();
-                    continue;
                 }
 
             } catch (InterruptedException e) {
@@ -118,7 +123,7 @@ public class Monitor implements MonitorInterface {
     /**
      * Dispara y libera la transición especificada.
      *
-     * <p>Este método realiza las siguientes operaciones en orden:
+     * <p>Este metodo realiza las siguientes operaciones en orden:
      * <ul>
      *   <li>Crea un vector de disparo para la transición especificada.</li>
      *   <li>Dispara la transición en el modelo utilizando el vector de disparo.</li>
@@ -126,7 +131,7 @@ public class Monitor implements MonitorInterface {
      *   <li>Imprime un mensaje en la consola indicando que la transición fue disparada exitosamente.</li>
      * </ul>
      *
-     * <p>Este método es parte de un sistema que maneja transiciones sensibilizadas
+     * <p>Este metodo es parte de un sistema que maneja transiciones sensibilizadas
      * y asegura que las operaciones concurrentes se gestionen correctamente mediante semáforos.
      *
      * @param transition el identificador de la transición que se va a disparar.
@@ -141,6 +146,7 @@ public class Monitor implements MonitorInterface {
         successfullyFired.add("T" + transition);
         printSuccessfullyFired();
         System.out.println("Transition " + transition + " fired successfully by " + Thread.currentThread().getName());
+        time.reset(transition);
     }
 
     private void printSuccessfullyFired() {
@@ -150,7 +156,7 @@ public class Monitor implements MonitorInterface {
     /**
      * Crea un vector de disparo para una transición específica.
      * <p>
-     * Este método genera un vector de disparo para la transición especificada.
+     * Este metodo genera un vector de disparo para la transición especificada.
      * El vector de disparo es un array de doubles donde todas las posiciones
      * son 0 excepto la posición correspondiente a la transición, que se establece en 1.
      * Luego, este array se convierte en una matriz de EJML.
@@ -167,13 +173,13 @@ public class Monitor implements MonitorInterface {
     /**
      * Actualiza las transiciones sensibilizadas y libera los semáforos correspondientes.
      *
-     * <p>Este método evalúa las transiciones sensibilizadas y las condiciones adicionales
+     * <p>Este metodo evalúa las transiciones sensibilizadas y las condiciones adicionales
      * (como los permisos disponibles en las colas de espera) mediante una operación lógica
      * AND entre las matrices de transiciones sensibilizadas y los conteos de espera. Para
      * cada transición que cumple ambas condiciones, se libera el semáforo correspondiente,
      * permitiendo que los hilos bloqueados puedan continuar.
      *
-     * <p>El método utiliza operaciones de matriz de la biblioteca EJML para realizar
+     * <p>El metodo utiliza operaciones de matriz de la biblioteca EJML para realizar
      * multiplicaciones elemento por elemento de manera eficiente.
      */
     private void updateSensitizedAndRelease() {
@@ -191,7 +197,6 @@ public class Monitor implements MonitorInterface {
 
         if (!availableTransitions.isEmpty()) {
             for (int transitionToRelease : availableTransitions) {
-                time.markEnabled(transitionToRelease);
                 System.out.printf("Transition %d sensitized. Releasing semaphore.%n", transitionToRelease);
                 Queues.decrementWaitingCount(transitionToRelease);
                 System.out.printf("Decremented waiting count for transition %d. New count: %.0f%n",
