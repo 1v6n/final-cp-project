@@ -5,20 +5,22 @@ import java.util.Map;
 
 public class TimeRestrictions {
     private final Map<Integer, Long> timedTransitions;
-    private final Map<Integer, Long> enabledTimestamp;
+    private final Map<Integer, Long> timeStamp;
 
     public TimeRestrictions() {
         this.timedTransitions = new HashMap<>();
-        this.enabledTimestamp = new HashMap<>();
+        this.timeStamp = new HashMap<>();
     }
 
     /**
-     * Configura el tiempo de habilitación para una transición específica.
+     * Configura el tiempo de habilitación para una transición específica. Setea el
+     * timestamp de habilitación al momento actual.
      * @param transition número de transición
      * @param delayMs tiempo de espera en milisegundos
      */
     public void setTimedTransition(int transition, long delayMs) {
         timedTransitions.put(transition, delayMs);
+        timeStamp.put(transition, System.currentTimeMillis());
     }
 
     /**
@@ -32,14 +34,6 @@ public class TimeRestrictions {
     }
 
     /**
-     * Marca cuando una transicion es habilitada.
-     * @param transition número de transición
-     */
-    public void markEnabled(int transition) {
-        enabledTimestamp.put(transition, System.currentTimeMillis());
-    }
-
-    /**
      * Verifica si la transicion puede ser disparada.
      * @param transition numero de transición
      * @return true si puede ser disparada, false en caso contrario
@@ -48,11 +42,9 @@ public class TimeRestrictions {
         if(!isTimedTransition(transition)) {
             return true;
         } else {
-            Long enabledTime = enabledTimestamp.get(transition);
-            if (enabledTime == null) { return false; }
-
+            Long enabledTime = timeStamp.get(transition);
             long elapsed = System.currentTimeMillis() - enabledTime;
-            return elapsed >= getTimeForTransition(transition);
+            return elapsed >= timedTransitions.get(transition);
         }
     }
 
@@ -65,13 +57,10 @@ public class TimeRestrictions {
         if (!isTimedTransition(transition)) {
             return 0;
         } else {
-            Long enabledTime = enabledTimestamp.get(transition);
-            if (enabledTime == null) {
-                return timedTransitions.get(transition); // No se ha marcado como habilitada
-            }
-
+            Long enabledTime = timeStamp.get(transition);
             long elapsed = System.currentTimeMillis() - enabledTime;
             long remaining = timedTransitions.get(transition) - elapsed;
+
             return Math.max(remaining, 0);
         }
     }
@@ -81,18 +70,8 @@ public class TimeRestrictions {
      * @param transition número de transición
      */
     public void reset(int transition) {
-        if (timedTransitions.containsKey(transition)) {
-            enabledTimestamp.remove(transition);
-            enabledTimestamp.put(transition, System.currentTimeMillis());
+        if (isTimedTransition(transition)) {
+            timeStamp.replace(transition, System.currentTimeMillis());
         }
-    }
-
-    /**
-     * Obtiene el tiempo configurado para una transición específica.
-     * @param transition número de transición
-     * @return tiempo en milisegundos
-     */
-    public long getTimeForTransition(int transition) {
-        return timedTransitions.getOrDefault(transition, 0L);
     }
 }

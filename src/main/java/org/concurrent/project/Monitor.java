@@ -40,13 +40,6 @@ public class Monitor implements MonitorInterface {
         time.setTimedTransition(8, 50);
         time.setTimedTransition(9, 60);
         time.setTimedTransition(10, 70);
-
-        time.markEnabled(1);
-        time.markEnabled(4);
-        time.markEnabled(5);
-        time.markEnabled(8);
-        time.markEnabled(9);
-        time.markEnabled(10);
     }
 
     /**

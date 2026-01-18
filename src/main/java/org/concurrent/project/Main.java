@@ -9,6 +9,7 @@ public class Main {
     public static void main(String[] args) {
         RdP rdP = new RdP();
         Monitor monitor = new Monitor(rdP);
+        long startTime = System.currentTimeMillis();
 
         int[][] invariants = {
                 {1, 2, 5, 6, 9, 10, 11},
@@ -48,5 +49,6 @@ public class Main {
         }
 
         System.out.println("All threads have completed.");
+        System.out.println("Total time elapsed: " + (System.currentTimeMillis() - startTime));
     }
 }
