@@ -5,10 +5,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class Main {
     private static final int TOTAL_RUNS = 186;
+    private static final Boolean timed = true;
 
     public static void main(String[] args) {
         RdP rdP = new RdP();
-        Monitor monitor = new Monitor(rdP);
+        Monitor monitor = new Monitor(rdP, timed);
         long startTime = System.currentTimeMillis();
 
         int[][] invariants = {

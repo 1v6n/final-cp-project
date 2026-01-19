@@ -25,7 +25,7 @@ public class Monitor implements MonitorInterface {
      *
      * @param rdp La red de Petri que será controlada por el monitor.
      */
-    Monitor(RdP rdp) {
+    Monitor(RdP rdp, Boolean timed) {
         entry = new Semaphore(1, true);
         this.rdp = rdp;
         Queues = new Queues();
@@ -33,13 +33,15 @@ public class Monitor implements MonitorInterface {
         successfullyFired = new CopyOnWriteArrayList<>();
         time = new TimeRestrictions();
 
-        // Transiciones con restricciones de tiempo {T1, T4, T5, T8, T9, T10}
-        time.setTimedTransition(1, 130);
-        time.setTimedTransition(4, 30);
-        time.setTimedTransition(5, 20);
-        time.setTimedTransition(8, 50);
-        time.setTimedTransition(9, 60);
-        time.setTimedTransition(10, 70);
+        if (timed) {
+            // Transiciones con restricciones de tiempo {T1, T4, T5, T8, T9, T10}
+            time.setTimedTransition(1, 130);
+            time.setTimedTransition(4, 70);
+            time.setTimedTransition(5, 70);
+            time.setTimedTransition(8, 100);
+            time.setTimedTransition(9, 50);
+            time.setTimedTransition(10, 50);
+        }
     }
 
     /**
