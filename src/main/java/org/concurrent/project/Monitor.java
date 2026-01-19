@@ -14,19 +14,32 @@ public class Monitor implements MonitorInterface {
     private final RdP rdp;
     private final Policy policy;
     private final ArrayList<String> successfullyFired;
+    private final LogService logger;
+    private final List<Invariants.PInvariant> pInvariants;
+
 
     /**
-     * Constructor.
-     * <p>
-     * Este método constructor crea una instancia del monitor que controla la red de Petri (RdP).
-     * Inicializa los semáforos de entrada, las colas necesarias para manejar las transiciones,
-     * y la política que se aplicará en caso de conflictos dentro de la red.
-     *
-     * @param rdp La red de Petri que será controlada por el monitor.
-     */
-    Monitor(RdP rdp) {
+    * Constructor del monitor.
+    *
+    * <p>
+    * Crea una instancia del monitor que controla el acceso concurrente a la red de Petri (RdP).
+    * El monitor garantiza exclusión mutua durante el disparo de transiciones, gestiona las colas
+    * de espera asociadas a cada transición y aplica la política de resolución de conflictos.
+    *
+    * <p>
+    * Además, recibe un servicio de logging que permite registrar cada disparo efectivo de transición
+    * de manera consistente, asegurando que los eventos registrados reflejen un estado válido del
+    * sistema y un marcado coherente de la red.
+    *
+    * @param rdp    La red de Petri que será controlada por el monitor.
+    * @param logger Servicio de logging utilizado para registrar los disparos de transiciones y eventos
+    *               relevantes del sistema de forma serializada.
+    */
+    Monitor(RdP rdp, LogService logger) {
         entry = new Semaphore(1, true);
         this.rdp = rdp;
+        this.logger = logger;
+        this.pInvariants = Invariants.defaultPInvariants();
         Queues = new Queues();
         policy = new Policy(true);
         successfullyFired = new ArrayList<>();
@@ -61,7 +74,6 @@ public class Monitor implements MonitorInterface {
         while (true) { // Retry until the transition is successfully fired
             try {
                 catchMonitor(); // Acquire the monitor
-                System.out.println(Thread.currentThread().getName() + " in monitor.");
                 isSensitized = (rdp.getSensibilizadas().get(0, transition) == 1);
 
                 if (isSensitized) {
@@ -71,7 +83,6 @@ public class Monitor implements MonitorInterface {
 
                 } else {
                     // k = false: Release the monitor and block on the semaphore
-                    System.out.println("Transicion " + transition + " no sensibilizada. Esperando en semáforo: " + Thread.currentThread().getName());
                     Queues.incrementWaitingCount(transition);
                     releaseMonitor(); // Release the monitor before blocking
                     Queues.getSemaphoreForTransition(transition).acquire(); // Block until transition is sensitized
@@ -95,7 +106,6 @@ public class Monitor implements MonitorInterface {
     }
 
     private void releaseMonitor() {
-        System.out.println("Releasing monitor");
         entry.release();
     }
 
@@ -123,12 +133,42 @@ public class Monitor implements MonitorInterface {
         rdp.fireTransition(firingVector, transition);
         updateSensibilizadasAndRelease();
         successfullyFired.add("T" + transition);
-        printSuccessfullyFired();
-        System.out.println("Transition " + transition + " fired successfully by " + Thread.currentThread().getName());
+
+        DMatrixRMaj markingMatrix = rdp.getMarcadoActual();
+        List<Invariants.PInvariantResult> results =
+                Invariants.checkPInvariants(markingMatrix, pInvariants);
+
+        String pinv = "OK";
+        boolean fail = false;
+        Invariants.PInvariantResult firstFail = null;
+
+        for (Invariants.PInvariantResult r : results) {
+            if (!r.ok()) {
+                fail = true;
+                firstFail = r;
+                pinv = "FAIL(" + r.name() + ",got=" + r.got() + ",exp=" + r.expected() + ")";
+                break; 
+            }
+        }
+
+        if (fail && firstFail != null) {
+            logger.logEvent(Thread.currentThread().getName(),
+                    "PINV_FAIL name=" + firstFail.name()
+                            + " got=" + firstFail.got()
+                            + " exp=" + firstFail.expected());
+        }
+
+        logger.logFire(Thread.currentThread().getName(), transition, true,
+                snapshotMarkingAsIntArray(), pinv);
     }
 
-    private void printSuccessfullyFired() {
-        System.out.println("Successfully fired transitions: " + successfullyFired);
+    private int[] snapshotMarkingAsIntArray() {
+        DMatrixRMaj m = rdp.getMarcadoActual();
+        int[] out = new int[m.numCols];
+        for (int i = 0; i < m.numCols; i++) {
+            out[i] = (int) Math.round(m.get(0, i));
+        }
+        return out;
     }
 
     /**
@@ -176,14 +216,9 @@ public class Monitor implements MonitorInterface {
 
         if (!availableTransitions.isEmpty()) {
             int randomIndex = availableTransitions.get(new Random().nextInt(availableTransitions.size()));
-            System.out.printf("Transition %d sensitized and selected. Releasing semaphore.%n", randomIndex);
             Queues.decrementWaitingCount(randomIndex);
-            System.out.printf("Decremented waiting count for transition %d. New count: %.0f%n",
-                    randomIndex, Queues.getWaitingCounts().get(0, randomIndex));
             Queues.getSemaphoreForTransition(randomIndex).release();
 
-        } else {
-            System.out.println("No available transitions to release.");
-        }
+        } 
     }
 }

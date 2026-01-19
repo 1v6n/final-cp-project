@@ -12,8 +12,8 @@ public class RdP {
 
     private final double[] M0 = {5, 1, 0, 0, 5, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0};
     private final double[][] MatrixIncidencia = {
-            {-1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-            {-1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {-1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, // P0
+            {-1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // P1
             {1, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
             {0, 1, -1, -1, 0, 0, 0, 0, 0, 0, 0, 0},
             {-1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0},
@@ -26,12 +26,12 @@ public class RdP {
             {0, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0},
             {0, 0, 0, 0, 0, 0, 0, 1, -1, 0, 0, 0},
             {0, 0, 0, 0, 0, 0, 0, 0, 0, 1, -1, 0},
-            {0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, -1},
+            {0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, -1}, // P14
     };
 
     private final double[][] MatrixIncidenciaSalida = {
-            {1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-            {0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // T0
+            {0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // T1
             {0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0},
             {0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0},
             {0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0},
@@ -41,7 +41,7 @@ public class RdP {
             {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0},
             {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0},
             {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0},
-            {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+            {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, // T11
     };
 
     public RdP() {
@@ -89,16 +89,13 @@ public class RdP {
 
         for (int i = 0; i < change.numRows; i++) {
             if (MarcadoActual.get(0, i) + change.get(i, 0) < 0) {
-                System.out.println("No se puede disparar la transición por insuficiencia de tokens.");
                 return;
             }
         }
 
         CommonOps_DDRM.addEquals(MarcadoActual, CommonOps_DDRM.transpose(change, null));
         transicionesSensibilizadas();
-        System.out.println(
-                "Transición " + transition + " disparada por " + Thread.currentThread().getName());
-    }
+   }
 
     /**
      * Actualiza el estado de sensibilización de las transiciones.

@@ -22,41 +22,29 @@ public class Threads implements Runnable {
 
   @Override
   public void run() {
-    if (isThread0) {
-      // Thread 0: Repeatedly fire transition 0
+      if (isThread0) {
+          runThread0();
+      } else {
+          runInvariantThread();
+      }
+  }
+
+  private void runThread0() {
       int transition = path.get(0);
       for (int i = 0; i < repeatCount; i++) {
-        if (monitor.fireTransition(transition)) {
-          System.out.printf(
-              "Thread %s: Successfully fired transition %d (Run %d).%n",
-              Thread.currentThread().getName(), transition, i + 1);
-        } else {
-          System.out.printf(
-              "Thread %s: Failed to fire transition %d (Run %d).%n",
-              Thread.currentThread().getName(), transition, i + 1);
-        }
+          monitor.fireTransition(transition);
       }
-      System.out.printf("Thread %s: Completed all runs.%n",
-                        Thread.currentThread().getName());
-    } else {
-      // Invariant Threads
-      while (invariantCounter.get() > 0) {
-        invariantCounter.getAndDecrement();
-        for (int transition : path) {
-          if (monitor.fireTransition(transition)) {
-            System.out.printf("Thread %s: Successfully fired transition %d.%n",
-                              Thread.currentThread().getName(), transition);
-          } else {
-            System.out.printf("Thread %s: Failed to fire transition %d.%n",
-                              Thread.currentThread().getName(), transition);
+  }
+
+  private void runInvariantThread() {
+      while (true) {
+          int remaining = invariantCounter.getAndDecrement();
+          if (remaining <= 0) {
+              break;
           }
-        }
-        System.out.printf(
-            "Thread %s: Completed one invariant. Remaining: %d.%n",
-            Thread.currentThread().getName(), invariantCounter.get());
+           for (int transition : path) {
+              monitor.fireTransition(transition);
+          }
       }
-    }
-    System.out.printf("Thread %s: Stopping as all invariants are complete.%n",
-                      Thread.currentThread().getName());
   }
 }
