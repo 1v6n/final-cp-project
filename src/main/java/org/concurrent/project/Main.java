@@ -5,10 +5,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class Main {
     private static final int TOTAL_RUNS = 186;
+    private static final boolean timed = true;
 
     public static void main(String[] args) {
         RdP rdP = new RdP();
-        Monitor monitor = new Monitor(rdP);
+        Monitor monitor = new Monitor(rdP, timed);
+        long startTime = System.currentTimeMillis();
 
         int[][] invariants = {
                 {1, 2, 5, 6, 9, 10, 11},
@@ -23,6 +25,7 @@ public class Main {
         Thread thread0 = new Thread(new Threads(pathForThread0, TOTAL_RUNS, rdP, monitor, invariantCounter, true), "Thread-0");
 
         Thread[] invariantThreads = new Thread[invariants.length];
+
         for (int i = 0; i < invariants.length; i++) {
             Vector<Integer> pathForInvariant = new Vector<>();
             for (int transition : invariants[i]) {
@@ -48,5 +51,6 @@ public class Main {
         }
 
         System.out.println("All threads have completed.");
+        System.out.println("Total time elapsed: " + (System.currentTimeMillis() - startTime));
     }
 }

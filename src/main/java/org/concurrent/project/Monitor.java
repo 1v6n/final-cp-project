@@ -2,45 +2,56 @@ package org.concurrent.project;
 
 import org.ejml.data.DMatrixRMaj;
 import org.ejml.dense.row.CommonOps_DDRM;
-
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Random;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public class Monitor implements MonitorInterface {
     private final Semaphore entry;
     private final Queues Queues;
     private final RdP rdp;
     private final Policy policy;
-    private final ArrayList<String> successfullyFired;
+    private final CopyOnWriteArrayList<String> successfullyFired;
+    private final TimeRestrictions time;
 
     /**
      * Constructor.
      * <p>
-     * Este método constructor crea una instancia del monitor que controla la red de Petri (RdP).
+     * Este metodo constructor crea una instancia del monitor que controla la red de Petri (RdP).
      * Inicializa los semáforos de entrada, las colas necesarias para manejar las transiciones,
      * y la política que se aplicará en caso de conflictos dentro de la red.
      *
      * @param rdp La red de Petri que será controlada por el monitor.
      */
-    Monitor(RdP rdp) {
+    Monitor(RdP rdp, boolean timed) {
         entry = new Semaphore(1, true);
         this.rdp = rdp;
         Queues = new Queues();
         policy = new Policy(true);
-        successfullyFired = new ArrayList<>();
+        successfullyFired = new CopyOnWriteArrayList<>();
+        time = new TimeRestrictions();
+
+        if (timed) {
+            // Transiciones con restricciones de tiempo {T1, T4, T5, T8, T9, T10}
+            time.setTimedTransition(1, 130);
+            time.setTimedTransition(4, 70);
+            time.setTimedTransition(5, 70);
+            time.setTimedTransition(8, 100);
+            time.setTimedTransition(9, 50);
+            time.setTimedTransition(10, 50);
+        }
     }
 
     /**
      * Intenta disparar la transición especificada de forma segura y bloqueante.
      *
-     * <p>Este método realiza un intento de disparar una transición sensibilizada en un modelo concurrente.
+     * <p>Este metodo realiza un intento de disparar una transición sensibilizada en un modelo concurrente.
      * Si la transición no está sensibilizada, el hilo actual se bloquea en un semáforo hasta que la transición
-     * esté disponible para dispararse. El método gestiona correctamente el acceso concurrente mediante el uso
+     * esté disponible para dispararse. El metodo gestiona correctamente el acceso concurrente mediante el uso
      * de un monitor y semáforos asociados a las transiciones.
      *
-     * <p>Las principales operaciones del método son:
+     * <p>Las principales operaciones del metodo son:
      * <ul>
      *   <li>Adquirir el monitor para sincronizar el acceso al modelo.</li>
      *   <li>Verificar si la transición está sensibilizada.</li>
@@ -58,51 +69,66 @@ public class Monitor implements MonitorInterface {
     @Override
     public boolean fireTransition(int transition) {
         boolean isSensitized = false;
-        while (true) { // Retry until the transition is successfully fired
+        boolean monitorReleased = false;
+
+        while (true) {
             try {
-                catchMonitor(); // Acquire the monitor
+                monitorReleased = catchMonitor();
                 System.out.println(Thread.currentThread().getName() + " in monitor.");
-                isSensitized = (rdp.getSensibilizadas().get(0, transition) == 1);
+                isSensitized = (rdp.getSensitized().get(0, transition) == 1);
 
                 if (isSensitized) {
-                    // k = true
-                    fireAndReleaseTransition(transition);
-                    return true; // Transition fired successfully
+                    if (time.canFire(transition)) {
+                        fireAndReleaseTransition(transition);
+                        time.reset(transition);
+                        //monitorReleased = releaseMonitor();
+                    } else {
+                        System.out.println("T" + transition + " no puede ser disparada por restricción de tiempo. Esperando...");
+                        //time.setWaiting(transition);
+                        monitorReleased = releaseMonitor();
 
+                        try {
+                            Thread.sleep(time.getRemainingTime(transition));
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            return false;
+                        }
+                        continue;
+                    }
+                    return true;
                 } else {
-                    // k = false: Release the monitor and block on the semaphore
-                    System.out.println("Transicion " + transition + " no sensibilizada. Esperando en semáforo: " + Thread.currentThread().getName());
+                    System.out.println("T" + transition + " no sensibilizada. Esperando en semáforo: " + Thread.currentThread().getName());
                     Queues.incrementWaitingCount(transition);
-                    releaseMonitor(); // Release the monitor before blocking
-                    Queues.getSemaphoreForTransition(transition).acquire(); // Block until transition is sensitized
+                    monitorReleased = releaseMonitor();
+                    Queues.getSemaphoreForTransition(transition).acquire();
                 }
-
             } catch (InterruptedException e) {
-                Thread.currentThread().interrupt(); // Restore interrupted status
-                e.printStackTrace();
-                return false; // Exit on interruption
-
+                Thread.currentThread().interrupt();
+                return false;
             } finally {
-                if (isSensitized) {
-                    releaseMonitor(); // Ensure monitor is released only after firing
+                if (!monitorReleased) {
+                    monitorReleased = releaseMonitor();
                 }
             }
         }
     }
 
-    private void catchMonitor() throws InterruptedException {
+    private boolean catchMonitor() throws InterruptedException {
+        System.out.println("Catching Monitor");
         entry.acquire();
+        return false;
     }
 
-    private void releaseMonitor() {
+    private boolean releaseMonitor() {
         System.out.println("Releasing monitor");
         entry.release();
+        return true;
     }
 
     /**
      * Dispara y libera la transición especificada.
      *
-     * <p>Este método realiza las siguientes operaciones en orden:
+     * <p>Este metodo realiza las siguientes operaciones en orden:
      * <ul>
      *   <li>Crea un vector de disparo para la transición especificada.</li>
      *   <li>Dispara la transición en el modelo utilizando el vector de disparo.</li>
@@ -110,7 +136,7 @@ public class Monitor implements MonitorInterface {
      *   <li>Imprime un mensaje en la consola indicando que la transición fue disparada exitosamente.</li>
      * </ul>
      *
-     * <p>Este método es parte de un sistema que maneja transiciones sensibilizadas
+     * <p>Este metodo es parte de un sistema que maneja transiciones sensibilizadas
      * y asegura que las operaciones concurrentes se gestionen correctamente mediante semáforos.
      *
      * @param transition el identificador de la transición que se va a disparar.
@@ -121,10 +147,11 @@ public class Monitor implements MonitorInterface {
     private void fireAndReleaseTransition(int transition) {
         DMatrixRMaj firingVector = createFiringVector(transition);
         rdp.fireTransition(firingVector, transition);
-        updateSensibilizadasAndRelease();
+        updateSensitizedAndRelease();
         successfullyFired.add("T" + transition);
         printSuccessfullyFired();
         System.out.println("Transition " + transition + " fired successfully by " + Thread.currentThread().getName());
+        time.reset(transition);
     }
 
     private void printSuccessfullyFired() {
@@ -134,7 +161,7 @@ public class Monitor implements MonitorInterface {
     /**
      * Crea un vector de disparo para una transición específica.
      * <p>
-     * Este método genera un vector de disparo para la transición especificada.
+     * Este metodo genera un vector de disparo para la transición especificada.
      * El vector de disparo es un array de doubles donde todas las posiciones
      * son 0 excepto la posición correspondiente a la transición, que se establece en 1.
      * Luego, este array se convierte en una matriz de EJML.
@@ -151,21 +178,20 @@ public class Monitor implements MonitorInterface {
     /**
      * Actualiza las transiciones sensibilizadas y libera los semáforos correspondientes.
      *
-     * <p>Este método evalúa las transiciones sensibilizadas y las condiciones adicionales
+     * <p>Este metodo evalúa las transiciones sensibilizadas y las condiciones adicionales
      * (como los permisos disponibles en las colas de espera) mediante una operación lógica
      * AND entre las matrices de transiciones sensibilizadas y los conteos de espera. Para
      * cada transición que cumple ambas condiciones, se libera el semáforo correspondiente,
      * permitiendo que los hilos bloqueados puedan continuar.
      *
-     * <p>El método utiliza operaciones de matriz de la biblioteca EJML para realizar
+     * <p>El metodo utiliza operaciones de matriz de la biblioteca EJML para realizar
      * multiplicaciones elemento por elemento de manera eficiente.
      */
-    private void updateSensibilizadasAndRelease() {
-
-        DMatrixRMaj sensibilizadas = rdp.getSensibilizadas();
+    private void updateSensitizedAndRelease() {
+        DMatrixRMaj sensitized = rdp.getSensitized();
         DMatrixRMaj WaitingCounts = Queues.getWaitingCounts();
-        DMatrixRMaj result = new DMatrixRMaj(sensibilizadas.numRows, sensibilizadas.numCols);
-        CommonOps_DDRM.elementMult(sensibilizadas, WaitingCounts, result);
+        DMatrixRMaj result = new DMatrixRMaj(sensitized.numRows, sensitized.numCols);
+        CommonOps_DDRM.elementMult(sensitized, WaitingCounts, result);
         List<Integer> availableTransitions = new ArrayList<>();
 
         for (int i = 0; i < result.numCols; i++) {
@@ -175,13 +201,13 @@ public class Monitor implements MonitorInterface {
         }
 
         if (!availableTransitions.isEmpty()) {
-            int randomIndex = availableTransitions.get(new Random().nextInt(availableTransitions.size()));
-            System.out.printf("Transition %d sensitized and selected. Releasing semaphore.%n", randomIndex);
-            Queues.decrementWaitingCount(randomIndex);
-            System.out.printf("Decremented waiting count for transition %d. New count: %.0f%n",
-                    randomIndex, Queues.getWaitingCounts().get(0, randomIndex));
-            Queues.getSemaphoreForTransition(randomIndex).release();
-
+            for (int transitionToRelease : availableTransitions) {
+                System.out.printf("Transition %d sensitized. Releasing semaphore.%n", transitionToRelease);
+                Queues.decrementWaitingCount(transitionToRelease);
+                System.out.printf("Decremented waiting count for transition %d. New count: %.0f%n",
+                        transitionToRelease, Queues.getWaitingCounts().get(0, transitionToRelease));
+                Queues.getSemaphoreForTransition(transitionToRelease).release();
+            }
         } else {
             System.out.println("No available transitions to release.");
         }
