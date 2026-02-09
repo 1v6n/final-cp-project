@@ -5,7 +5,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class Main {
     private static final int TOTAL_RUNS = 186;
-    private static final Boolean timed = true;
+    private static final boolean timed = true;
 
     public static void main(String[] args) {
         RdP rdP = new RdP();

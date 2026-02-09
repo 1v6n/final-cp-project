@@ -2,7 +2,6 @@ package org.concurrent.project;
 
 import org.ejml.data.DMatrixRMaj;
 import org.ejml.dense.row.CommonOps_DDRM;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Semaphore;
@@ -25,7 +24,7 @@ public class Monitor implements MonitorInterface {
      *
      * @param rdp La red de Petri que será controlada por el monitor.
      */
-    Monitor(RdP rdp, Boolean timed) {
+    Monitor(RdP rdp, boolean timed) {
         entry = new Semaphore(1, true);
         this.rdp = rdp;
         Queues = new Queues();
@@ -77,16 +76,25 @@ public class Monitor implements MonitorInterface {
                 System.out.println(Thread.currentThread().getName() + " in monitor.");
                 isSensitized = (rdp.getSensitized().get(0, transition) == 1);
 
-                if (isSensitized && time.canFire(transition)) {
-                    fireAndReleaseTransition(transition);
-                    time.reset(transition);
-                    return true;
+                if (isSensitized) {
+                    if (time.canFire(transition)) {
+                        fireAndReleaseTransition(transition);
+                        time.reset(transition);
+                        releaseMonitor();
+                    } else {
+                        System.out.println("T" + transition + " no puede ser disparada por restricción de tiempo. Esperando...");
+                        //time.setWaiting(transition);
+                        releaseMonitor();
 
-                } else if (isSensitized) {
-                    long waitTime = time.getRemainingTime(transition);
-                    System.out.println("T" + transition + " waiting " + waitTime + "ms. in " + Thread.currentThread().getName());
-                    Thread.sleep(waitTime);
-                    releaseMonitor();
+                        try {
+                            Thread.sleep(time.getRemainingTime(transition));
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            return false;
+                        }
+                        continue;
+                    }
+                    return true;
                 } else {
                     System.out.println("T" + transition + " no sensibilizada. Esperando en semáforo: " + Thread.currentThread().getName());
                     Queues.incrementWaitingCount(transition);
@@ -97,16 +105,12 @@ public class Monitor implements MonitorInterface {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return false;
-
-            } finally {
-                if (isSensitized && entry.availablePermits() == 0) {
-                    releaseMonitor();
-                }
             }
         }
     }
 
     private void catchMonitor() throws InterruptedException {
+        System.out.println("Catching Monitor");
         entry.acquire();
     }
 

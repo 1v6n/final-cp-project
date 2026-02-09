@@ -6,10 +6,12 @@ import java.util.Map;
 public class TimeRestrictions {
     private final Map<Integer, Long> timedTransitions;
     private final Map<Integer, Long> timeStamp;
+    private final Map<Integer, Boolean> waitingTransitions;
 
     public TimeRestrictions() {
         this.timedTransitions = new HashMap<>();
         this.timeStamp = new HashMap<>();
+        this.waitingTransitions = new HashMap<>();
     }
 
     /**
@@ -21,6 +23,7 @@ public class TimeRestrictions {
     public void setTimedTransition(int transition, long delayMs) {
         timedTransitions.put(transition, delayMs);
         timeStamp.put(transition, System.currentTimeMillis());
+        waitingTransitions.put(transition, false);
     }
 
     /**
@@ -34,17 +37,38 @@ public class TimeRestrictions {
     }
 
     /**
+     * Devuelve si la transición está siendo esperada por un hilo.
+     * @param transition número de transición
+     * @return {@code true} si la transición está siendo esperada por un hilo, {@code false} en caso contrario.
+     */
+    public boolean isWaiting(int transition) {
+        return waitingTransitions.getOrDefault(transition, false);
+    }
+
+    /**
      * Verifica si la transicion puede ser disparada.
      * @param transition numero de transición
-     * @return true si puede ser disparada, false en caso contrario
+     * @return {@code true} si puede ser disparada, {@code false} en caso contrario
      */
     public boolean canFire(int transition) {
-        if(!isTimedTransition(transition)) {
+        if (!isTimedTransition(transition)) {
             return true;
         } else {
             Long enabledTime = timeStamp.get(transition);
-            long elapsed = System.currentTimeMillis() - enabledTime;
-            return elapsed >= timedTransitions.get(transition);
+            long alpha = System.currentTimeMillis() - enabledTime;
+            long beta = timedTransitions.get(transition);
+            return (alpha >= beta);
+        }
+    }
+
+    /**
+     * Resetea el timestamp de una transición al tiempo actual y marca la transición como no esperando.
+     * @param transition número de transición
+     */
+    public void reset(int transition) {
+        if (isTimedTransition(transition)) {
+            timeStamp.replace(transition, System.currentTimeMillis());
+            waitingTransitions.replace(transition, false);
         }
     }
 
@@ -66,12 +90,22 @@ public class TimeRestrictions {
     }
 
     /**
-     * Resetea el tiempo de habilitación de una transición.
+     * Resetea el timestamp de una transición al tiempo actual.
      * @param transition número de transición
      */
-    public void reset(int transition) {
+    public void setTimeStamp(int transition) {
         if (isTimedTransition(transition)) {
             timeStamp.replace(transition, System.currentTimeMillis());
+        }
+    }
+
+    /**
+     * Marca la transición como esperando.
+     * @param transition número de transición
+     */
+    public void setWaiting(int transition) {
+        if (isTimedTransition(transition)) {
+            waitingTransitions.replace(transition, true);
         }
     }
 }
