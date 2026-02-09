@@ -25,6 +25,7 @@ public class Main {
         Thread thread0 = new Thread(new Threads(pathForThread0, TOTAL_RUNS, rdP, monitor, invariantCounter, true), "Thread-0");
 
         Thread[] invariantThreads = new Thread[invariants.length];
+
         for (int i = 0; i < invariants.length; i++) {
             Vector<Integer> pathForInvariant = new Vector<>();
             for (int transition : invariants[i]) {

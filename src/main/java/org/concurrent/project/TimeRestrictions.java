@@ -57,6 +57,7 @@ public class TimeRestrictions {
             Long enabledTime = timeStamp.get(transition);
             long alpha = System.currentTimeMillis() - enabledTime;
             long beta = timedTransitions.get(transition);
+            System.out.println("Tiempo transcurrido para T" + transition + ": " + alpha + " ms. Tiempo requerido: " + beta + " ms.");
             return (alpha >= beta);
         }
     }

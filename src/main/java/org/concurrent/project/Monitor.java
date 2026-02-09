@@ -69,10 +69,11 @@ public class Monitor implements MonitorInterface {
     @Override
     public boolean fireTransition(int transition) {
         boolean isSensitized = false;
+        boolean monitorReleased = false;
 
         while (true) {
             try {
-                catchMonitor();
+                monitorReleased = catchMonitor();
                 System.out.println(Thread.currentThread().getName() + " in monitor.");
                 isSensitized = (rdp.getSensitized().get(0, transition) == 1);
 
@@ -80,11 +81,11 @@ public class Monitor implements MonitorInterface {
                     if (time.canFire(transition)) {
                         fireAndReleaseTransition(transition);
                         time.reset(transition);
-                        releaseMonitor();
+                        //monitorReleased = releaseMonitor();
                     } else {
                         System.out.println("T" + transition + " no puede ser disparada por restricción de tiempo. Esperando...");
                         //time.setWaiting(transition);
-                        releaseMonitor();
+                        monitorReleased = releaseMonitor();
 
                         try {
                             Thread.sleep(time.getRemainingTime(transition));
@@ -98,25 +99,30 @@ public class Monitor implements MonitorInterface {
                 } else {
                     System.out.println("T" + transition + " no sensibilizada. Esperando en semáforo: " + Thread.currentThread().getName());
                     Queues.incrementWaitingCount(transition);
-                    releaseMonitor();
+                    monitorReleased = releaseMonitor();
                     Queues.getSemaphoreForTransition(transition).acquire();
                 }
-
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return false;
+            } finally {
+                if (!monitorReleased) {
+                    monitorReleased = releaseMonitor();
+                }
             }
         }
     }
 
-    private void catchMonitor() throws InterruptedException {
+    private boolean catchMonitor() throws InterruptedException {
         System.out.println("Catching Monitor");
         entry.acquire();
+        return false;
     }
 
-    private void releaseMonitor() {
+    private boolean releaseMonitor() {
         System.out.println("Releasing monitor");
         entry.release();
+        return true;
     }
 
     /**
