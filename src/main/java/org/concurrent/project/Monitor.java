@@ -6,8 +6,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 
 public class Monitor implements MonitorInterface {
+    private static final long EXPIRED_RECHECK_SLEEP_MS = 2L;
+    private static final long WAIT_RECHECK_MS = 10L;
+
     private final Semaphore entry;
     private final Queues Queues;
     private final RdP rdp;
@@ -33,13 +38,14 @@ public class Monitor implements MonitorInterface {
         time = new TimeRestrictions();
 
         if (timed) {
-            // Transiciones con restricciones de tiempo {T1, T4, T5, T8, T9, T10}
-            time.setTimedTransition(1, 130);
-            time.setTimedTransition(4, 70);
-            time.setTimedTransition(5, 70);
-            time.setTimedTransition(8, 100);
-            time.setTimedTransition(9, 50);
-            time.setTimedTransition(10, 50);
+            // Transiciones temporizadas con semántica débil y beta finito [alpha, beta].
+            time.setTimedTransition(1, 130, 130);
+            time.setTimedTransition(4, 70, 70);
+            time.setTimedTransition(5, 70, 70);
+            time.setTimedTransition(8, 100, 100);
+            time.setTimedTransition(9, 50, 50);
+            time.setTimedTransition(10, 50, 50);
+            time.updateFromSensitized(rdp.getSensitized());
         }
     }
 
@@ -68,61 +74,152 @@ public class Monitor implements MonitorInterface {
      */
     @Override
     public boolean fireTransition(int transition) {
-        boolean isSensitized = false;
-        boolean monitorReleased = false;
+        return fireTransition(transition, () -> true);
+    }
+
+    /**
+     * Intenta disparar una transición con una condición externa de continuidad.
+     *
+     * <p>Este metodo extiende la lógica de disparo bloqueante del monitor incorporando una condición
+     * de corte evaluada periódicamente durante la espera. Resulta útil para escenarios de finalización
+     * controlada del trabajo, donde un hilo debe poder abandonar esperas largas (semáforo o temporización)
+     * cuando una condición global de parada deja de cumplirse.
+     *
+     * <p>La condición {@code shouldContinue} se verifica:
+     * <ul>
+     *   <li>Antes de entrar a cada iteración principal.</li>
+     *   <li>Durante las esperas temporales fraccionadas por ETF.</li>
+     *   <li>Después de esperas acotadas en semáforos de transición.</li>
+     * </ul>
+     *
+     * @param transition identificador de la transición a intentar disparar.
+     * @param shouldContinue condición de continuidad del intento de disparo.
+     * @return {@code true} si la transición se disparó; {@code false} si se cancela por condición de parada
+     *         o por interrupción del hilo.
+     * @throws IllegalArgumentException si el índice de transición está fuera de rango.
+     */
+    public boolean fireTransition(int transition, BooleanSupplier shouldContinue) {
+        validateTransitionIndex(transition);
 
         while (true) {
+            if (!shouldContinue.getAsBoolean()) {
+                return false;
+            }
+            boolean monitorHeld = false;
             try {
-                monitorReleased = catchMonitor();
+                catchMonitor();
+                monitorHeld = true;
                 System.out.println(Thread.currentThread().getName() + " in monitor.");
-                isSensitized = (rdp.getSensitized().get(0, transition) == 1);
+                time.updateFromSensitized(rdp.getSensitized());
+                boolean isSensitized = (rdp.getSensitized().get(0, transition) == 1);
 
                 if (isSensitized) {
-                    if (time.canFire(transition)) {
-                        fireAndReleaseTransition(transition);
-                        time.reset(transition);
-                        //monitorReleased = releaseMonitor();
-                    } else {
-                        System.out.println("T" + transition + " no puede ser disparada por restricción de tiempo. Esperando...");
-                        //time.setWaiting(transition);
-                        monitorReleased = releaseMonitor();
-
-                        try {
-                            Thread.sleep(time.getRemainingTime(transition));
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                            return false;
-                        }
-                        continue;
+                    TimeRestrictions.FireEvaluation evaluation = time.evaluateFire(transition);
+                    switch (evaluation) {
+                        case ALLOWED:
+                            fireAndReleaseTransition(transition);
+                            return true;
+                        case TOO_EARLY:
+                            System.out.println("T" + transition + " no puede ser disparada por restricción de tiempo. Esperando...");
+                            long remainingMs = time.getRemainingToEarliest(transition);
+                            releaseMonitor();
+                            monitorHeld = false;
+                            sleepWithStopCheck(remainingMs, shouldContinue);
+                            continue;
+                        case EXPIRED:
+                            System.out.println("T" + transition + " vencida para esta instancia. Reintentando al refrescar sensibilización.");
+                            releaseMonitor();
+                            monitorHeld = false;
+                            Thread.sleep(EXPIRED_RECHECK_SLEEP_MS);
+                            continue;
+                        case NOT_ENABLED:
+                            // Si ocurre, reintentar ciclo; la sensibilización pudo cambiar entre chequeos.
+                            continue;
                     }
-                    return true;
-                } else {
-                    System.out.println("T" + transition + " no sensibilizada. Esperando en semáforo: " + Thread.currentThread().getName());
-                    Queues.incrementWaitingCount(transition);
-                    monitorReleased = releaseMonitor();
-                    Queues.getSemaphoreForTransition(transition).acquire();
+                }
+
+                System.out.println("T" + transition + " no sensibilizada. Esperando en semáforo: " + Thread.currentThread().getName());
+                Queues.incrementWaitingCount(transition);
+                releaseMonitor();
+                monitorHeld = false;
+                boolean acquired = Queues.getSemaphoreForTransition(transition).tryAcquire(WAIT_RECHECK_MS, TimeUnit.MILLISECONDS);
+                if (!acquired && !shouldContinue.getAsBoolean()) {
+                    return false;
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return false;
             } finally {
-                if (!monitorReleased) {
-                    monitorReleased = releaseMonitor();
+                if (monitorHeld) {
+                    releaseMonitor();
                 }
             }
         }
     }
 
-    private boolean catchMonitor() throws InterruptedException {
-        System.out.println("Catching Monitor");
-        entry.acquire();
-        return false;
+    /**
+     * Duerme en intervalos cortos validando una condición de continuidad.
+     *
+     * <p>Este metodo evita esperas monolíticas largas para mejorar la capacidad de respuesta
+     * del hilo frente a cambios de estado global. En cada tramo de sueño se vuelve a consultar
+     * {@code shouldContinue}; si la condición deja de cumplirse, la espera termina de forma anticipada.
+     *
+     * @param totalSleepMs tiempo total de espera deseado en milisegundos.
+     * @param shouldContinue condición de continuidad para mantener la espera.
+     * @throws InterruptedException si el hilo es interrumpido durante el sueño.
+     */
+    private void sleepWithStopCheck(long totalSleepMs, BooleanSupplier shouldContinue) throws InterruptedException {
+        long remaining = Math.max(totalSleepMs, 0L);
+        while (remaining > 0) {
+            if (!shouldContinue.getAsBoolean()) {
+                return;
+            }
+            long step = Math.min(remaining, WAIT_RECHECK_MS);
+            Thread.sleep(step);
+            remaining -= step;
+        }
     }
 
-    private boolean releaseMonitor() {
+    /**
+     * Adquiere el monitor de exclusión mutua de la red.
+     *
+     * <p>Este metodo serializa el acceso al estado compartido de la RdP y a las estructuras
+     * auxiliares del monitor, garantizando que la evaluación de sensibilización, tiempos y disparo
+     * se realice de manera atómica respecto de otros hilos.
+     *
+     * @throws InterruptedException si el hilo es interrumpido mientras espera el monitor.
+     */
+    private void catchMonitor() throws InterruptedException {
+        System.out.println("Catching Monitor");
+        entry.acquire();
+    }
+
+    /**
+     * Libera el monitor de exclusión mutua.
+     *
+     * <p>Este metodo habilita el progreso de otros hilos que esperan ingresar al monitor
+     * para continuar con su ciclo de evaluación/disparo de transiciones.
+     */
+    private void releaseMonitor() {
         System.out.println("Releasing monitor");
         entry.release();
-        return true;
+    }
+
+    /**
+     * Valida que el identificador de transición pertenezca al rango de la RdP.
+     *
+     * <p>La validación se realiza contra la cantidad de transiciones definida por
+     * la matriz de incidencia. Si el valor no es válido, se detiene la operación
+     * con una excepción descriptiva.
+     *
+     * @param transition índice de transición a validar.
+     * @throws IllegalArgumentException si {@code transition} es menor a cero o mayor/igual al total.
+     */
+    private void validateTransitionIndex(int transition) {
+        int totalTransitions = rdp.getIncidencia().numCols;
+        if (transition < 0 || transition >= totalTransitions) {
+            throw new IllegalArgumentException("Transition fuera de rango: " + transition);
+        }
     }
 
     /**
@@ -147,15 +244,22 @@ public class Monitor implements MonitorInterface {
     private void fireAndReleaseTransition(int transition) {
         DMatrixRMaj firingVector = createFiringVector(transition);
         rdp.fireTransition(firingVector, transition);
+        time.updateFromSensitized(rdp.getSensitized());
+        time.onTransitionFired(transition, rdp.getSensitized().get(0, transition) == 1);
         updateSensitizedAndRelease();
         successfullyFired.add("T" + transition);
         printSuccessfullyFired();
         System.out.println("Transition " + transition + " fired successfully by " + Thread.currentThread().getName());
-        time.reset(transition);
     }
 
+    /**
+     * Imprime un resumen del total de transiciones disparadas exitosamente.
+     *
+     * <p>Se informa únicamente el conteo acumulado para evitar trazas excesivas
+     * y mantener bajo el costo de logging durante ejecuciones largas.
+     */
     private void printSuccessfullyFired() {
-        System.out.println("Successfully fired transitions: " + successfullyFired);
+        System.out.println("Successfully fired transitions count: " + successfullyFired.size());
     }
 
     /**
@@ -195,7 +299,8 @@ public class Monitor implements MonitorInterface {
         List<Integer> availableTransitions = new ArrayList<>();
 
         for (int i = 0; i < result.numCols; i++) {
-            if (result.get(0, i) >= 1) {
+            if (result.get(0, i) >= 1
+                    && time.evaluateFireNoSideEffects(i) == TimeRestrictions.FireEvaluation.ALLOWED) {
                 availableTransitions.add(i);
             }
         }
