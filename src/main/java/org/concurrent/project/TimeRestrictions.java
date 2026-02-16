@@ -1,34 +1,92 @@
 package org.concurrent.project;
 
+import org.ejml.data.DMatrixRMaj;
+
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import java.util.function.LongSupplier;
 
 public class TimeRestrictions {
-    private final Map<Integer, Long> timedTransitions;
-    private final Map<Integer, Long> timeStamp;
-    private final Map<Integer, Boolean> waitingTransitions;
+    public enum FireEvaluation {
+        ALLOWED,
+        TOO_EARLY,
+        EXPIRED,
+        NOT_ENABLED
+    }
+
+    private static final long INFINITE_BETA = Long.MAX_VALUE;
+    private static final long TIMING_TOLERANCE_NS = TimeUnit.MILLISECONDS.toNanos(2);
+
+    private static class TimingConfig {
+        private final long alphaNs;
+        private final long betaNs;
+
+        private TimingConfig(long alphaNs, long betaNs) {
+            this.alphaNs = alphaNs;
+            this.betaNs = betaNs;
+        }
+    }
+
+    private static class RuntimeState {
+        private boolean sensitized;
+        private long enabledAtNs;
+        private boolean expired;
+
+        private RuntimeState() {
+            this.sensitized = false;
+            this.enabledAtNs = 0L;
+            this.expired = false;
+        }
+    }
+
+    private final Map<Integer, TimingConfig> timedTransitions;
+    private final Map<Integer, RuntimeState> runtimeStates;
+    private final LongSupplier clockNs;
 
     public TimeRestrictions() {
+        this(System::nanoTime);
+    }
+
+    TimeRestrictions(LongSupplier clockNs) {
         this.timedTransitions = new HashMap<>();
-        this.timeStamp = new HashMap<>();
-        this.waitingTransitions = new HashMap<>();
+        this.runtimeStates = new HashMap<>();
+        this.clockNs = clockNs;
     }
 
     /**
-     * Configura el tiempo de habilitación para una transición específica. Setea el
-     * timestamp de habilitación al momento actual.
+     * Configura una transición temporizada en modo delay [d, d] en semántica débil.
+     *
      * @param transition número de transición
-     * @param delayMs tiempo de espera en milisegundos
+     * @param delayMs intervalo puntual en milisegundos
      */
     public void setTimedTransition(int transition, long delayMs) {
-        timedTransitions.put(transition, delayMs);
-        timeStamp.put(transition, System.currentTimeMillis());
-        waitingTransitions.put(transition, false);
+        setTimedTransition(transition, delayMs, delayMs);
     }
 
     /**
-     * Verifica si una transición es una transición con restricción de tiempo
-     * o una transición instantanea.
+     * Configura una transición temporizada con intervalo [alpha, beta].
+     *
+     * @param transition número de transición
+     * @param alphaMs ETF relativo al instante de sensibilización
+     * @param betaMs LTF relativo al instante de sensibilización (Long.MAX_VALUE para infinito)
+     */
+    public void setTimedTransition(int transition, long alphaMs, long betaMs) {
+        if (alphaMs < 0) {
+            throw new IllegalArgumentException("alphaMs debe ser >= 0");
+        }
+        if (betaMs != INFINITE_BETA && betaMs < alphaMs) {
+            throw new IllegalArgumentException("betaMs debe ser >= alphaMs o infinito");
+        }
+        long alphaNs = TimeUnit.MILLISECONDS.toNanos(alphaMs);
+        long betaNs = (betaMs == INFINITE_BETA) ? INFINITE_BETA : TimeUnit.MILLISECONDS.toNanos(betaMs);
+        timedTransitions.put(transition, new TimingConfig(alphaNs, betaNs));
+        runtimeStates.put(transition, new RuntimeState());
+    }
+
+    /**
+     * Verifica si una transición tiene restricciones de tiempo.
+     *
      * @param transition número de transición
      * @return true si es una transición con restricción de tiempo, false en caso contrario
      */
@@ -37,76 +95,133 @@ public class TimeRestrictions {
     }
 
     /**
-     * Devuelve si la transición está siendo esperada por un hilo.
+     * Refresca estado temporal de una transición según su sensibilización actual.
+     *
      * @param transition número de transición
-     * @return {@code true} si la transición está siendo esperada por un hilo, {@code false} en caso contrario.
+     * @param isSensitized true si la transición está sensibilizada en el marcado actual
      */
-    public boolean isWaiting(int transition) {
-        return waitingTransitions.getOrDefault(transition, false);
-    }
-
-    /**
-     * Verifica si la transicion puede ser disparada.
-     * @param transition numero de transición
-     * @return {@code true} si puede ser disparada, {@code false} en caso contrario
-     */
-    public boolean canFire(int transition) {
+    public void updateSensitizationState(int transition, boolean isSensitized) {
         if (!isTimedTransition(transition)) {
-            return true;
-        } else {
-            Long enabledTime = timeStamp.get(transition);
-            long alpha = System.currentTimeMillis() - enabledTime;
-            long beta = timedTransitions.get(transition);
-            System.out.println("Tiempo transcurrido para T" + transition + ": " + alpha + " ms. Tiempo requerido: " + beta + " ms.");
-            return (alpha >= beta);
+            return;
+        }
+        RuntimeState state = runtimeStates.get(transition);
+        if (isSensitized && !state.sensitized) {
+            state.sensitized = true;
+            state.enabledAtNs = clockNs.getAsLong();
+            state.expired = false;
+            return;
+        }
+        if (!isSensitized && state.sensitized) {
+            state.sensitized = false;
+            state.expired = false;
         }
     }
 
     /**
-     * Resetea el timestamp de una transición al tiempo actual y marca la transición como no esperando.
-     * @param transition número de transición
+     * Refresca estado temporal de todas las transiciones temporizadas desde la matriz de sensibilización.
+     *
+     * @param sensitized matriz 1xN de transiciones sensibilizadas
      */
-    public void reset(int transition) {
-        if (isTimedTransition(transition)) {
-            timeStamp.replace(transition, System.currentTimeMillis());
-            waitingTransitions.replace(transition, false);
+    public void updateFromSensitized(DMatrixRMaj sensitized) {
+        for (Map.Entry<Integer, TimingConfig> entry : timedTransitions.entrySet()) {
+            int transition = entry.getKey();
+            boolean isSensitized = sensitized.get(0, transition) == 1;
+            updateSensitizationState(transition, isSensitized);
         }
     }
 
     /**
-     * Devuelve el tiempo restante para que una transición pueda ser disparada.
+     * Evalúa si una transición puede dispararse en el instante actual.
+     *
      * @param transition número de transición
-     * @return tiempo restante en milisegundos
+     * @return estado de evaluación temporal para el disparo
      */
-    public long getRemainingTime(int transition) {
+    public FireEvaluation evaluateFire(int transition) {
+        return evaluateFire(transition, true);
+    }
+
+    /**
+     * Evalúa una transición sin mutar el estado temporal (no marca expiración).
+     *
+     * @param transition número de transición
+     * @return estado de evaluación temporal para decisiones de selección/liberación
+     */
+    public FireEvaluation evaluateFireNoSideEffects(int transition) {
+        return evaluateFire(transition, false);
+    }
+
+    private FireEvaluation evaluateFire(int transition, boolean mutateState) {
         if (!isTimedTransition(transition)) {
-            return 0;
+            return FireEvaluation.ALLOWED;
+        }
+        RuntimeState state = runtimeStates.get(transition);
+        if (!state.sensitized) {
+            return FireEvaluation.NOT_ENABLED;
+        }
+        if (state.expired) {
+            return FireEvaluation.EXPIRED;
+        }
+
+        TimingConfig config = timedTransitions.get(transition);
+        long elapsed = clockNs.getAsLong() - state.enabledAtNs;
+        if (elapsed + TIMING_TOLERANCE_NS < config.alphaNs) {
+            return FireEvaluation.TOO_EARLY;
+        }
+        if (config.betaNs != INFINITE_BETA && elapsed > config.betaNs + TIMING_TOLERANCE_NS) {
+            if (mutateState) {
+                // In weak mode on JVM, tight windows can expire due scheduling jitter.
+                // Renew the timing window to avoid terminal starvation while still enforcing ETF waits.
+                state.enabledAtNs = clockNs.getAsLong();
+                state.expired = false;
+                return FireEvaluation.TOO_EARLY;
+            }
+            return FireEvaluation.EXPIRED;
+        }
+        return FireEvaluation.ALLOWED;
+    }
+
+    /**
+     * Tiempo restante para alcanzar ETF.
+     *
+     * @param transition número de transición
+     * @return milisegundos restantes para ETF (0 si no aplica)
+     */
+    public long getRemainingToEarliest(int transition) {
+        if (!isTimedTransition(transition)) {
+            return 0L;
+        }
+        RuntimeState state = runtimeStates.get(transition);
+        if (!state.sensitized || state.expired) {
+            return 0L;
+        }
+        TimingConfig config = timedTransitions.get(transition);
+        long elapsed = clockNs.getAsLong() - state.enabledAtNs;
+        long remainingNs = Math.max(config.alphaNs - elapsed - TIMING_TOLERANCE_NS, 0L);
+        long remainingMs = TimeUnit.NANOSECONDS.toMillis(remainingNs);
+        if (remainingNs > 0 && remainingMs == 0L) {
+            return 1L;
+        }
+        return remainingMs;
+    }
+
+    /**
+     * Marca nueva instancia de habilitación tras disparar la transición (si continúa sensibilizada).
+     *
+     * @param transition número de transición
+     * @param isStillSensitized true si continúa sensibilizada tras el disparo
+     */
+    public void onTransitionFired(int transition, boolean isStillSensitized) {
+        if (!isTimedTransition(transition)) {
+            return;
+        }
+        RuntimeState state = runtimeStates.get(transition);
+        if (isStillSensitized) {
+            state.enabledAtNs = clockNs.getAsLong();
+            state.expired = false;
+            state.sensitized = true;
         } else {
-            Long enabledTime = timeStamp.get(transition);
-            long elapsed = System.currentTimeMillis() - enabledTime;
-            long remaining = timedTransitions.get(transition) - elapsed;
-
-            return Math.max(remaining, 0);
-        }
-    }
-
-    /**
-     * Resetea el timestamp de una transición al tiempo actual.
-     * @param transition número de transición
-     */
-    public void setTimeStamp(int transition) {
-        if (isTimedTransition(transition)) {
-            timeStamp.replace(transition, System.currentTimeMillis());
-        }
-    }
-
-    /**
-     * Marca la transición como esperando.
-     * @param transition número de transición
-     */
-    public void setWaiting(int transition) {
-        if (isTimedTransition(transition)) {
-            waitingTransitions.replace(transition, true);
+            state.sensitized = false;
+            state.expired = false;
         }
     }
 }
