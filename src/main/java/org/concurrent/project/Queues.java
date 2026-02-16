@@ -63,7 +63,8 @@ public class Queues {
      * @param transition the index of the transition to decrement the waiting count for.
      */
     public void decrementWaitingCount(int transition) {
-        waitingCount.set(0, transition, waitingCount.get(0, transition) - 1);
+        double current = waitingCount.get(0, transition);
+        waitingCount.set(0, transition, Math.max(0, current - 1));
     }
 
 
