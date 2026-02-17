@@ -74,51 +74,24 @@ public class Threads implements Runnable {
         run++;
         boolean fired = monitor.fireTransition(transition);
         if (fired) {
-          System.out.printf(
-              "Thread %s: Successfully fired transition %d (Run %d).%n",
-              Thread.currentThread().getName(), transition, run);
         } else {
           if (completedInvariants.get() >= totalInvariants ||
               Thread.currentThread().isInterrupted()) {
             break;
           }
-          System.out.printf(
-              "Thread %s: Failed to fire transition %d (Run %d).%n",
-              Thread.currentThread().getName(), transition, run);
         }
       }
-      System.out.printf("Thread %s: Completed all runs.%n",
-          Thread.currentThread().getName());
     } else {
       // Hilos de invariante: reservan una ejecución completa antes de correrla.
       while (invariantPermits.tryAcquire()) {
         for (int transition : path) {
           if (monitor.fireTransition(transition)) {
-            System.out.printf("Thread %s: Successfully fired transition %d.%n",
-                Thread.currentThread().getName(), transition);
           } else {
-            System.out.printf("Thread %s: Failed to fire transition %d.%n",
-                Thread.currentThread().getName(), transition);
             return;
           }
         }
-        int completed = completedInvariants.incrementAndGet();
-        int remaining = Math.max(totalInvariants - completed, 0);
-        System.out.printf(
-            "Thread %s: Completed one invariant. Remaining: %d.%n",
-            Thread.currentThread().getName(), remaining);
+        completedInvariants.incrementAndGet();
       }
-    }
-    if (isThread0) {
-      System.out.printf("Thread %s: Stopping worker thread.%n",
-          Thread.currentThread().getName());
-    } else if (completedInvariants.get() >= totalInvariants) {
-      System.out.printf("Thread %s: Stopping as all invariants are complete.%n",
-          Thread.currentThread().getName());
-    } else {
-      System.out.printf(
-          "Thread %s: Stopping (no invariant permit available).%n",
-          Thread.currentThread().getName());
     }
   }
 }

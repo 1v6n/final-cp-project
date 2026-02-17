@@ -14,8 +14,7 @@ import java.time.format.DateTimeFormatter;
  */
 public class LogService implements AutoCloseable {
   private final BufferedWriter writer;
-  private final DateTimeFormatter tsFmt =
-      DateTimeFormatter.ISO_OFFSET_DATE_TIME;
+  private final DateTimeFormatter tsFmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
   /**
    * Crea una nueva instancia del servicio de logging.
@@ -28,7 +27,7 @@ public class LogService implements AutoCloseable {
    *
    * @param logPath Ruta del archivo donde se almacenará el log de ejecución.
    * @throws IOException Si ocurre un error durante la creación o apertura del
-   *     archivo.
+   *                     archivo.
    */
   public LogService(Path logPath) throws IOException {
     Path parent = logPath.getParent();
@@ -36,8 +35,8 @@ public class LogService implements AutoCloseable {
       Files.createDirectories(parent);
 
     this.writer = Files.newBufferedWriter(logPath, StandardCharsets.UTF_8,
-                                          StandardOpenOption.CREATE,
-                                          StandardOpenOption.TRUNCATE_EXISTING);
+        StandardOpenOption.CREATE,
+        StandardOpenOption.TRUNCATE_EXISTING);
   }
 
   /**
@@ -55,18 +54,18 @@ public class LogService implements AutoCloseable {
    *
    * @param threadName Nombre del hilo que ejecutó el disparo.
    * @param transition Identificador de la transición disparada.
-   * @param ok          Indica si el disparo fue exitoso.
-   * @param marking     Marcado actual de la red de Petri al finalizar el
-   *     disparo.
-   * @param pinv        Resultado del chequeo de invariantes de plaza (por
-   *     ejemplo, OK, FAIL o NA).
+   * @param ok         Indica si el disparo fue exitoso.
+   * @param marking    Marcado actual de la red de Petri al finalizar el
+   *                   disparo.
+   * @param pinv       Resultado del chequeo de invariantes de plaza (por
+   *                   ejemplo, OK, FAIL o NA).
    */
   public synchronized void logFire(String threadName, int transition,
-                                   boolean ok, int[] marking, String pinv) {
+      boolean ok, int[] marking, String pinv) {
     String ts = ZonedDateTime.now().format(tsFmt);
     String line = ts + " | thr=" + threadName + " | tr=T" + transition +
-                  " | ok=" + ok + " | m=" + formatMarking(marking) +
-                  " | pinv=" + pinv;
+        " | ok=" + ok + " | m=" + formatMarking(marking) +
+        " | pinv=" + pinv;
     writeLine(line);
   }
 
@@ -84,7 +83,7 @@ public class LogService implements AutoCloseable {
    *
    * @param threadName Nombre del hilo que genera el evento.
    * @param event      Identificador del evento (por ejemplo, BEGIN_IT1 o
-   *     END_IT1).
+   *                   END_IT1).
    */
   public synchronized void logEvent(String threadName, String event) {
     String ts = ZonedDateTime.now().format(tsFmt);

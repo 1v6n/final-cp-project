@@ -112,7 +112,6 @@ public class Monitor implements MonitorInterface {
       try {
         catchMonitor();
         monitorHeld = true;
-        System.out.println(Thread.currentThread().getName() + " in monitor.");
         boolean isSensitized = (rdp.getSensitized().get(0, transition) == 1);
 
         if (isSensitized) {
@@ -183,9 +182,6 @@ public class Monitor implements MonitorInterface {
    */
   private void waitUntilEarliestFireTime(int transition)
       throws InterruptedException {
-    System.out.println(
-        "T" + transition +
-            " no puede ser disparada por restricción de tiempo. Esperando...");
     long remainingMs = time.getRemainingToEarliest(transition);
     long observedSequence = time.getEnableSequence(transition);
     releaseMonitor();
@@ -204,9 +200,6 @@ public class Monitor implements MonitorInterface {
    */
   private void waitForFreshEnableInstance(int transition)
       throws InterruptedException {
-    System.out.println(
-        "T" + transition +
-            " vencida para esta instancia. Esperando nueva habilitación.");
     long expiredSequence = time.getEnableSequence(transition);
     Queues.incrementWaitingCount(transition);
     releaseMonitor();
@@ -234,9 +227,6 @@ public class Monitor implements MonitorInterface {
    */
   private void waitForSensitization(int transition)
       throws InterruptedException {
-    System.out.println("T" + transition +
-        " no sensibilizada. Esperando en semáforo: " +
-        Thread.currentThread().getName());
     Queues.incrementWaitingCount(transition);
     releaseMonitor();
     Queues.getSemaphoreForTransition(transition).acquire();
@@ -279,7 +269,6 @@ public class Monitor implements MonitorInterface {
    * @throws InterruptedException si el hilo es interrumpido mientras espera.
    */
   private void catchMonitor() throws InterruptedException {
-    System.out.println("Catching Monitor");
     entry.acquire();
   }
 
@@ -290,7 +279,6 @@ public class Monitor implements MonitorInterface {
    * Permite que otros hilos en espera ingresen al ciclo de evaluación/disparo.
    */
   private void releaseMonitor() {
-    System.out.println("Releasing monitor");
     entry.release();
   }
 
@@ -328,10 +316,7 @@ public class Monitor implements MonitorInterface {
     releaseWaitersOnFreshEnable(newlyEnabledTransitions);
     updateSensitizedAndRelease();
     successfullyFired.add("T" + transition);
-    printSuccessfullyFired();
-    System.out.println("Transition " + transition + " fired successfully by " +
-        Thread.currentThread().getName());
-
+    // printSuccessfullyFired();
     if (log != null) {
       DMatrixRMaj markingMatrix = rdp.getMarcadoActual();
       List<Invariants.PInvariantResult> results = Invariants.checkPInvariants(markingMatrix, pInvariants);
@@ -439,17 +424,9 @@ public class Monitor implements MonitorInterface {
 
     if (!availableTransitions.isEmpty()) {
       for (int transitionToRelease : availableTransitions) {
-        System.out.printf("Transition %d sensitized. Releasing semaphore.%n",
-            transitionToRelease);
         Queues.decrementWaitingCount(transitionToRelease);
-        System.out.printf(
-            "Decremented waiting count for transition %d. New count: %.0f%n",
-            transitionToRelease,
-            Queues.getWaitingCounts().get(0, transitionToRelease));
         Queues.getSemaphoreForTransition(transitionToRelease).release();
       }
-    } else {
-      System.out.println("No available transitions to release.");
     }
   }
 }
