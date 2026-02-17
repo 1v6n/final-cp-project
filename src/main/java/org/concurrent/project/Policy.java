@@ -4,11 +4,22 @@ import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.Random;
 
+/**
+ * Define una política de selección entre transiciones candidatas.
+ *
+ * <p>En modo balanceado prioriza alternancia entre T2 y T3 cuando ambas están
+ * disponibles. En otros casos selecciona una transición posible al azar.
+ */
 public class Policy {
     private boolean type;
     private AtomicInteger CounterT2;
     private AtomicInteger CounterT3;
 
+    /**
+     * Construye la política de selección.
+     *
+     * @param type tipo de política activa.
+     */
     public Policy(boolean type) {
         this.type = type;
         this.CounterT2 = new AtomicInteger(0);
@@ -16,23 +27,23 @@ public class Policy {
     }
 
     /**
-     * Determines which transition to fire based on the given conditions.
+     * Determina qué transición seleccionar bajo la política configurada.
      *
-     * @param possibleTransitions List of possible transitions to consider.
-     * @return The selected transition index.
+     * @param possibleTransitions lista de transiciones candidatas.
+     * @return índice de transición seleccionada.
      */
     public int whichTransition(ArrayList<Integer> possibleTransitions) {
         if (type) {
-            // Condition 1: Handle specific transitions (e.g., T2 and T3)
+            // Balanceo explícito para el conflicto entre T2 y T3.
             if (possibleTransitions.get(2) == 1 && possibleTransitions.get(3) == 1) {
                 if (CounterT2.get() < CounterT3.get()) {
                     CounterT2.incrementAndGet();
-                    return 2; // Prefer transition 2
+                    return 2;
                 } else if (CounterT2.get() > CounterT3.get()) {
                     CounterT3.incrementAndGet();
-                    return 3; // Prefer transition 3
+                    return 3;
                 } else {
-                    // Condition 3: Random selection if both are equal
+                    // Si están empatadas, desempata aleatoriamente.
                     Random random = new Random();
                     return random.nextBoolean() ? 2 : 3;
                 }

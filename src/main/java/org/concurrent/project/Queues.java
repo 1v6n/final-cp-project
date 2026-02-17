@@ -5,11 +5,22 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Semaphore;
 
+/**
+ * Administra colas de espera por transición y su contabilidad asociada.
+ *
+ * <p>Cada transición posee un semáforo dedicado para bloquear/despertar hilos.
+ * Además, se mantiene un contador de espera por transición para decidir
+ * liberaciones de forma consistente.
+ */
 public class Queues {
     private final List<Semaphore> Queues;
     private final int numQueues;
-    private final DMatrixRMaj waitingCount; // Tracks threads waiting for each transition
+    // Cantidad de hilos esperando por transición.
+    private final DMatrixRMaj waitingCount;
 
+    /**
+     * Construye la estructura de colas con un semáforo por transición.
+     */
     public Queues() {
         this.numQueues = 12;
         this.Queues = new ArrayList<>(numQueues);
@@ -17,6 +28,9 @@ public class Queues {
         initializeSemaphores();
     }
 
+    /**
+     * Inicializa los semáforos internos con cero permisos.
+     */
     public void initializeSemaphores() {
         for (int i = 0; i < numQueues; i++) {
             Queues.add(createSemaphore());
@@ -27,8 +41,8 @@ public class Queues {
      * Calcula el estado actual de los permisos disponibles en cada cola y devuelve una matriz que
      * representa estos estados.
      *
-     * @return Una matriz de una fila que contiene los permisos disponibles para cada semaforo
-     *     asociado a las colas de transicion.
+     * @return una matriz de una fila con permisos disponibles por semáforo
+     *         asociado a cada transición.
      */
     public DMatrixRMaj queuesEstan() {
         double[] queues = new double[this.numQueues];
@@ -40,27 +54,27 @@ public class Queues {
     }
 
     /**
-     * Retrieves the current waiting counts for all transitions.
+     * Devuelve el conteo actual de hilos en espera por transición.
      *
-     * @return A matrix representing the waiting counts.
+     * @return matriz 1xT con cantidad de hilos esperando por transición.
      */
     public DMatrixRMaj getWaitingCounts() {
         return waitingCount;
     }
 
     /**
-     * Increments the waiting count for a transition.
+     * Incrementa el contador de espera de una transición.
      *
-     * @param transition the index of the transition to increment the waiting count for.
+     * @param transition índice de transición.
      */
     public void incrementWaitingCount(int transition) {
         waitingCount.set(0, transition, waitingCount.get(0, transition) + 1);
     }
 
     /**
-     * Decrements the waiting count for a transition.
+     * Decrementa el contador de espera de una transición sin bajar de cero.
      *
-     * @param transition the index of the transition to decrement the waiting count for.
+     * @param transition índice de transición.
      */
     public void decrementWaitingCount(int transition) {
         double current = waitingCount.get(0, transition);
@@ -68,6 +82,12 @@ public class Queues {
     }
 
 
+    /**
+     * Devuelve el semáforo asociado a una transición.
+     *
+     * @param transition índice de transición.
+     * @return semáforo de la cola de esa transición.
+     */
     public Semaphore getSemaphoreForTransition(int transition) {
         return Queues.get(transition);
     }
@@ -76,6 +96,11 @@ public class Queues {
         return new Semaphore(0);
     }
 
+    /**
+     * Devuelve la lista completa de semáforos de cola.
+     *
+     * @return lista de semáforos internos por transición.
+     */
     public List<Semaphore> getQueues() {
         return Queues;
     }

@@ -4,20 +4,32 @@ import java.util.Vector;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 
+/**
+ * Punto de entrada de la simulación concurrente de la red de Petri.
+ *
+ * <p>
+ * Inicializa modelo, monitor y pool de hilos (habilitador + invariantes),
+ * y espera finalización al completar la cantidad objetivo de invariantes.
+ */
 public class Main {
     private static final int TOTAL_RUNS = 186;
     private static final boolean timed = true;
 
+    /**
+     * Ejecuta la simulación.
+     *
+     * @param args argumentos de línea de comandos.
+     */
     public static void main(String[] args) {
         RdP rdP = new RdP();
         Monitor monitor = new Monitor(rdP, timed);
         long startTime = System.currentTimeMillis();
 
         int[][] invariants = {
-                {1, 2, 5, 6, 9, 10, 11},
-                {1, 3, 4, 6, 9, 10, 11},
-                {1, 2, 5, 7, 8, 11},
-                {1, 3, 4, 7, 8, 11}
+                { 1, 2, 5, 6, 9, 10, 11 },
+                { 1, 3, 4, 6, 9, 10, 11 },
+                { 1, 2, 5, 7, 8, 11 },
+                { 1, 3, 4, 7, 8, 11 }
         };
 
         Semaphore invariantPermits = new Semaphore(TOTAL_RUNS, true);
@@ -49,6 +61,7 @@ public class Main {
                 Thread.sleep(10);
             }
 
+            thread0.interrupt();
             for (Thread thread : invariantThreads) {
                 thread.join();
             }

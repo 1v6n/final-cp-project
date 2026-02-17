@@ -4,17 +4,36 @@ import java.util.Vector;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 
+/**
+ * Worker ejecutor de secuencias de transiciones sobre el monitor.
+ *
+ * <p>Puede operar como hilo habilitador (T0) o como hilo de invariante.
+ * En modo invariante, cada hilo reserva una ejecución completa mediante
+ * permisos antes de intentar disparar su secuencia.
+ */
 public class Threads implements Runnable {
   private final Vector<Integer> path;
   private final int repeatCount;
   private final int totalInvariants;
-  private final Monitor monitor;
+  private final MonitorInterface monitor;
   private final Semaphore invariantPermits;
   private final AtomicInteger completedInvariants;
   private final boolean isThread0;
 
+  /**
+   * Construye un worker de ejecución de transiciones.
+   *
+   * @param path secuencia de transiciones a ejecutar por este hilo.
+   * @param repeatCount cantidad nominal de repeticiones (reservado para compatibilidad).
+   * @param rdp red de Petri asociada (no utilizada directamente en esta versión).
+   * @param monitor monitor usado para disparar transiciones.
+   * @param invariantPermits semáforo que limita invariantes completos a ejecutar.
+   * @param completedInvariants contador global de invariantes completados.
+   * @param totalInvariants objetivo total de invariantes.
+   * @param isThread0 {@code true} si el hilo actúa como habilitador principal.
+   */
   public Threads(Vector<Integer> path, int repeatCount, RdP rdp,
-      Monitor monitor, Semaphore invariantPermits, AtomicInteger completedInvariants,
+      MonitorInterface monitor, Semaphore invariantPermits, AtomicInteger completedInvariants,
       int totalInvariants,
       boolean isThread0) {
     this.path = path;
@@ -26,17 +45,23 @@ public class Threads implements Runnable {
     this.isThread0 = isThread0;
   }
 
+  /**
+   * Ejecuta el ciclo principal del hilo según su rol.
+   *
+   * <p>Si es hilo habilitador, intenta disparar continuamente su transición de
+   * entrada hasta alcanzar el objetivo global o ser interrumpido. Si es hilo de
+   * invariante, reserva un permiso y ejecuta su secuencia completa.
+   */
   @Override
   public void run() {
     if (isThread0) {
-      // Thread 0: Keep enabling work until all invariants complete.
+      // Hilo 0: mantiene el flujo de habilitación hasta completar invariantes.
       int transition = path.get(0);
       int run = 0;
       while (completedInvariants.get() < totalInvariants
           && !Thread.currentThread().isInterrupted()) {
         run++;
-        boolean fired = monitor.fireTransition(
-            transition, () -> completedInvariants.get() < totalInvariants);
+        boolean fired = monitor.fireTransition(transition);
         if (fired) {
           System.out.printf(
               "Thread %s: Successfully fired transition %d (Run %d).%n",
@@ -54,7 +79,7 @@ public class Threads implements Runnable {
       System.out.printf("Thread %s: Completed all runs.%n",
           Thread.currentThread().getName());
     } else {
-      // Invariant Threads: reserve one full invariant atomically before running it.
+      // Hilos de invariante: reservan una ejecución completa antes de correrla.
       while (invariantPermits.tryAcquire()) {
         for (int transition : path) {
           if (monitor.fireTransition(transition)) {

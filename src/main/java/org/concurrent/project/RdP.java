@@ -3,6 +3,13 @@ package org.concurrent.project;
 import org.ejml.data.DMatrixRMaj;
 import org.ejml.dense.row.CommonOps_DDRM;
 
+/**
+ * Modelo de Red de Petri con marcado y sensibilización estructural.
+ *
+ * <p>Contiene matrices de incidencia, marcado actual y cálculo de transiciones
+ * sensibilizadas. El disparo actualiza el marcado si no produce tokens
+ * negativos.
+ */
 public class RdP {
 
     private DMatrixRMaj Incidencia;
@@ -44,6 +51,9 @@ public class RdP {
             {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
     };
 
+    /**
+     * Inicializa la red con marcado inicial y matrices de incidencia predefinidas.
+     */
     public RdP() {
         this.MarcadoActual = new DMatrixRMaj(1, M0.length, true, M0);
         this.Incidencia = new DMatrixRMaj(MatrixIncidencia);
@@ -55,17 +65,14 @@ public class RdP {
     /**
      * Dispara una transición en la red de Petri.
      *
-     * <p>Este método intenta disparar una transición específica en la red de Petri basándose en un
-     * vector de disparo. Primero, verifica que el vector de disparo contenga exactamente un '1' y el
-     * resto '0's, indicando que unicamente quiere disparar 1 transición. Luego, calcula el cambio en
-     * el marcado de la red resultante de disparar la transición. Si el disparo resulta en un estado
-     * inválido de la red (por ejemplo, un marcado negativo), se cancela el disparo y se notifica.
-     * Finalmente, si el disparo es válido, se actualiza el marcado actual de la red y se recalculan
-     * las transiciones sensibilizadas basadas en el nuevo estado de la red.
+     * <p>Valida que el vector de disparo sea unitario (un único {@code 1} y el
+     * resto {@code 0}), calcula el cambio de marcado y rechaza el disparo si
+     * produciría tokens negativos. Si es válido, actualiza el marcado y
+     * recalcula las transiciones sensibilizadas.
      *
-     * @param firingVector Vector que indica la transición a disparar, debe contener un solo '1'.
-     * @param transition El índice de la transición a disparar.
-     * @throws IllegalArgumentException Si el vector de disparo no cumple con los requisitos.
+     * @param firingVector vector de disparo a aplicar.
+     * @param transition índice de transición a disparar.
+     * @throws IllegalArgumentException si el vector no cumple el formato esperado.
      */
     public void fireTransition(DMatrixRMaj firingVector, int transition) {
         if (firingVector.numCols != 1 || firingVector.numRows != Incidencia.numCols) {
@@ -103,14 +110,8 @@ public class RdP {
     /**
      * Actualiza el estado de sensibilización de las transiciones.
      *
-     * <p>Este método revisa cada transición de la red de Petri para determinar si está sensibilizada,
-     * es decir, si cumple con las condiciones necesarias para ser disparada dada la configuración
-     * actual de tokens en los lugares de la red. Utiliza la matriz de marcado actual y la matriz de
-     * incidencia de salida para realizar esta verificación. Para cada transición, si todos los
-     * lugares relevantes tienen suficientes tokens según lo especificado en la matriz de transición
-     * posible, la transición se marca como sensibilizada. De lo contrario, se marca como no
-     * sensibilizada. El resultado de este proceso es la actualización de la matriz de transiciones
-     * sensibilizadas, reflejando el estado actual de qué transiciones pueden ser disparadas.
+     * <p>Una transición se marca como sensibilizada si todas sus plazas de entrada
+     * poseen tokens suficientes según la matriz de incidencia de salida.
      */
     private void transicionesSensibilizadas() {
         for (int t = 0; t < IncidenciaSalida.numRows; t++) {
@@ -125,6 +126,9 @@ public class RdP {
         }
     }
 
+    /**
+     * Imprime el marcado actual en formato fila.
+     */
     public void printMarcadoActual() {
         for (int i = 0; i < MarcadoActual.numRows; i++) {
             for (int j = 0; j < MarcadoActual.numCols; j++) {
@@ -134,14 +138,29 @@ public class RdP {
         }
     }
 
+    /**
+     * Devuelve el marcado actual de la red.
+     *
+     * @return matriz 1xP con tokens actuales por plaza.
+     */
     public DMatrixRMaj getMarcadoActual() {
         return MarcadoActual;
     }
 
+    /**
+     * Devuelve la matriz de incidencia de la red.
+     *
+     * @return matriz de incidencia (plazas x transiciones).
+     */
     public DMatrixRMaj getIncidencia() {
         return Incidencia;
     }
 
+    /**
+     * Devuelve el vector de transiciones sensibilizadas.
+     *
+     * @return matriz 1xT con 1 para transiciones sensibilizadas y 0 en caso contrario.
+     */
     public DMatrixRMaj getSensitized() {
         return Sensibilizadas;
     }

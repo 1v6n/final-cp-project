@@ -2,12 +2,22 @@ package org.concurrent.project;
 
 import org.ejml.data.DMatrixRMaj;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.function.LongSupplier;
 
+/**
+ * Gestiona restricciones temporales de disparo para transiciones de la RdP.
+ *
+ * <p>Implementa evaluación en semántica débil sobre ventanas [alpha, beta]
+ * por instancia de habilitación, incluyendo detección de expiración, cálculo
+ * de tiempo restante a ETF y versionado de habilitación.
+ */
 public class TimeRestrictions {
+    /** Resultado de evaluación temporal para un intento de disparo. */
     public enum FireEvaluation {
         ALLOWED,
         TOO_EARLY,
@@ -32,11 +42,13 @@ public class TimeRestrictions {
         private boolean sensitized;
         private long enabledAtNs;
         private boolean expired;
+        private long enableSequence;
 
         private RuntimeState() {
             this.sensitized = false;
             this.enabledAtNs = 0L;
             this.expired = false;
+            this.enableSequence = 0L;
         }
     }
 
@@ -44,10 +56,21 @@ public class TimeRestrictions {
     private final Map<Integer, RuntimeState> runtimeStates;
     private final LongSupplier clockNs;
 
+    /**
+     * Construye el gestor temporal usando {@link System#nanoTime()} como reloj.
+     */
     public TimeRestrictions() {
         this(System::nanoTime);
     }
 
+    /**
+     * Construye el gestor temporal con un proveedor de tiempo inyectable.
+     *
+     * <p>Visible a paquete para facilitar pruebas determinísticas del
+     * comportamiento temporal.
+     *
+     * @param clockNs proveedor de tiempo en nanosegundos.
+     */
     TimeRestrictions(LongSupplier clockNs) {
         this.timedTransitions = new HashMap<>();
         this.runtimeStates = new HashMap<>();
@@ -87,8 +110,8 @@ public class TimeRestrictions {
     /**
      * Verifica si una transición tiene restricciones de tiempo.
      *
-     * @param transition número de transición
-     * @return true si es una transición con restricción de tiempo, false en caso contrario
+     * @param transition número de transición.
+     * @return {@code true} si la transición es temporizada; {@code false} en caso contrario.
      */
     public boolean isTimedTransition(int transition) {
         return timedTransitions.containsKey(transition);
@@ -97,44 +120,53 @@ public class TimeRestrictions {
     /**
      * Refresca estado temporal de una transición según su sensibilización actual.
      *
-     * @param transition número de transición
-     * @param isSensitized true si la transición está sensibilizada en el marcado actual
+     * @param transition número de transición.
+     * @param isSensitized {@code true} si la transición está sensibilizada.
+     * @return {@code true} si se detectó una nueva habilitación en esta actualización;
+     *         {@code false} en cualquier otro caso.
      */
-    public void updateSensitizationState(int transition, boolean isSensitized) {
+    public boolean updateSensitizationState(int transition, boolean isSensitized) {
         if (!isTimedTransition(transition)) {
-            return;
+            return false;
         }
         RuntimeState state = runtimeStates.get(transition);
         if (isSensitized && !state.sensitized) {
             state.sensitized = true;
             state.enabledAtNs = clockNs.getAsLong();
             state.expired = false;
-            return;
+            state.enableSequence++;
+            return true;
         }
         if (!isSensitized && state.sensitized) {
             state.sensitized = false;
             state.expired = false;
         }
+        return false;
     }
 
     /**
      * Refresca estado temporal de todas las transiciones temporizadas desde la matriz de sensibilización.
      *
-     * @param sensitized matriz 1xN de transiciones sensibilizadas
+     * @param sensitized matriz 1xN de transiciones sensibilizadas.
+     * @return lista de transiciones que pasaron de no sensibilizadas a sensibilizadas.
      */
-    public void updateFromSensitized(DMatrixRMaj sensitized) {
+    public List<Integer> updateFromSensitized(DMatrixRMaj sensitized) {
+        List<Integer> newlyEnabledTransitions = new ArrayList<>();
         for (Map.Entry<Integer, TimingConfig> entry : timedTransitions.entrySet()) {
             int transition = entry.getKey();
             boolean isSensitized = sensitized.get(0, transition) == 1;
-            updateSensitizationState(transition, isSensitized);
+            if (updateSensitizationState(transition, isSensitized)) {
+                newlyEnabledTransitions.add(transition);
+            }
         }
+        return newlyEnabledTransitions;
     }
 
     /**
      * Evalúa si una transición puede dispararse en el instante actual.
      *
-     * @param transition número de transición
-     * @return estado de evaluación temporal para el disparo
+     * @param transition número de transición.
+     * @return resultado de evaluación temporal para el disparo.
      */
     public FireEvaluation evaluateFire(int transition) {
         return evaluateFire(transition, true);
@@ -143,8 +175,8 @@ public class TimeRestrictions {
     /**
      * Evalúa una transición sin mutar el estado temporal (no marca expiración).
      *
-     * @param transition número de transición
-     * @return estado de evaluación temporal para decisiones de selección/liberación
+     * @param transition número de transición.
+     * @return resultado de evaluación temporal para decisiones de selección/liberación.
      */
     public FireEvaluation evaluateFireNoSideEffects(int transition) {
         return evaluateFire(transition, false);
@@ -169,11 +201,7 @@ public class TimeRestrictions {
         }
         if (config.betaNs != INFINITE_BETA && elapsed > config.betaNs + TIMING_TOLERANCE_NS) {
             if (mutateState) {
-                // In weak mode on JVM, tight windows can expire due scheduling jitter.
-                // Renew the timing window to avoid terminal starvation while still enforcing ETF waits.
-                state.enabledAtNs = clockNs.getAsLong();
-                state.expired = false;
-                return FireEvaluation.TOO_EARLY;
+                state.expired = true;
             }
             return FireEvaluation.EXPIRED;
         }
@@ -183,8 +211,8 @@ public class TimeRestrictions {
     /**
      * Tiempo restante para alcanzar ETF.
      *
-     * @param transition número de transición
-     * @return milisegundos restantes para ETF (0 si no aplica)
+     * @param transition número de transición.
+     * @return milisegundos restantes para ETF ({@code 0} si no aplica).
      */
     public long getRemainingToEarliest(int transition) {
         if (!isTimedTransition(transition)) {
@@ -207,8 +235,8 @@ public class TimeRestrictions {
     /**
      * Marca nueva instancia de habilitación tras disparar la transición (si continúa sensibilizada).
      *
-     * @param transition número de transición
-     * @param isStillSensitized true si continúa sensibilizada tras el disparo
+     * @param transition número de transición.
+     * @param isStillSensitized {@code true} si continúa sensibilizada tras el disparo.
      */
     public void onTransitionFired(int transition, boolean isStillSensitized) {
         if (!isTimedTransition(transition)) {
@@ -219,9 +247,27 @@ public class TimeRestrictions {
             state.enabledAtNs = clockNs.getAsLong();
             state.expired = false;
             state.sensitized = true;
+            state.enableSequence++;
         } else {
             state.sensitized = false;
             state.expired = false;
         }
     }
+
+    /**
+     * Devuelve la versión de la instancia de habilitación de una transición temporizada.
+     *
+     * <p>La versión se incrementa cada vez que se crea una nueva instancia habilitada
+     * (por ejemplo, en el flanco no-sensibilizada -> sensibilizada).
+     *
+     * @param transition número de transición.
+     * @return versión actual de habilitación, o {@code -1} si la transición no es temporizada.
+     */
+    public long getEnableSequence(int transition) {
+        if (!isTimedTransition(transition)) {
+            return -1L;
+        }
+        return runtimeStates.get(transition).enableSequence;
+    }
+
 }
