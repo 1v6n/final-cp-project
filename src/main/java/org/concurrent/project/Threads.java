@@ -14,10 +14,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class Threads implements Runnable {
   private final Vector<Integer> path;
-  private final int repeatCount;
   private final int totalInvariants;
   private final MonitorInterface monitor;
   private final Semaphore invariantPermits;
+  private final Semaphore t0Permits;
   private final AtomicInteger completedInvariants;
   private final boolean isThread0;
   private final LogService log;
@@ -27,27 +27,27 @@ public class Threads implements Runnable {
    *
    * @param path                secuencia de transiciones a ejecutar por este
    *                            hilo.
-   * @param repeatCount         cantidad nominal de repeticiones (reservado para
-   *                            compatibilidad).
    * @param rdp                 red de Petri asociada (no utilizada directamente
    *                            en esta versión).
    * @param monitor             monitor usado para disparar transiciones.
    * @param invariantPermits    semáforo que limita invariantes completos a
    *                            ejecutar.
+   * @param t0Permits           semáforo que limita disparos de T0.
    * @param completedInvariants contador global de invariantes completados.
    * @param totalInvariants     objetivo total de invariantes.
    * @param isThread0           {@code true} si el hilo actúa como habilitador
    *                            principal.
    */
-  public Threads(Vector<Integer> path, int repeatCount, RdP rdp,
+  public Threads(Vector<Integer> path, RdP rdp,
       MonitorInterface monitor, Semaphore invariantPermits,
+      Semaphore t0Permits,
       AtomicInteger completedInvariants, int totalInvariants,
       boolean isThread0, LogService log) {
     this.path = path;
-    this.repeatCount = repeatCount;
     this.totalInvariants = totalInvariants;
     this.monitor = monitor;
     this.invariantPermits = invariantPermits;
+    this.t0Permits = t0Permits;
     this.completedInvariants = completedInvariants;
     this.isThread0 = isThread0;
     this.log = log;
@@ -67,8 +67,10 @@ public class Threads implements Runnable {
       // Hilo 0: mantiene el flujo de habilitación hasta completar invariantes.
       int transition = path.get(0);
       int run = 0;
-      while (completedInvariants.get() < totalInvariants &&
-          !Thread.currentThread().isInterrupted()) {
+      while (!Thread.currentThread().isInterrupted()) {
+        if (!t0Permits.tryAcquire()) {
+          break;
+        }
         run++;
         boolean fired = monitor.fireTransition(transition);
         if (fired) {

@@ -37,11 +37,12 @@ public class Main {
           { 1, 3, 4, 7, 8, 11 } };
 
       Semaphore invariantPermits = new Semaphore(TOTAL_RUNS, true);
+      Semaphore t0Permits = new Semaphore(TOTAL_RUNS, true);
       AtomicInteger completedInvariants = new AtomicInteger(0);
       Vector<Integer> pathForThread0 = new Vector<>();
       pathForThread0.add(0);
-      Thread thread0 = new Thread(new Threads(pathForThread0, TOTAL_RUNS, rdP, monitor,
-          invariantPermits, completedInvariants,
+      Thread thread0 = new Thread(new Threads(pathForThread0, rdP, monitor,
+          invariantPermits, t0Permits, completedInvariants,
           TOTAL_RUNS, true, logService),
           "Thread-0");
 
@@ -53,8 +54,8 @@ public class Main {
           pathForInvariant.add(transition);
         }
         invariantThreads[i] = new Thread(
-            new Threads(pathForInvariant, 0, rdP, monitor, invariantPermits,
-                completedInvariants, TOTAL_RUNS, false, logService),
+            new Threads(pathForInvariant, rdP, monitor, invariantPermits,
+                t0Permits, completedInvariants, TOTAL_RUNS, false, logService),
             "Invariant-Thread-" + (i + 1));
       }
 
