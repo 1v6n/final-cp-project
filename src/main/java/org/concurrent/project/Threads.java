@@ -7,7 +7,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * Worker ejecutor de secuencias de transiciones sobre el monitor.
  *
- * <p>Puede operar como hilo habilitador (T0) o como hilo de invariante.
+ * <p>
+ * Puede operar como hilo habilitador (T0) o como hilo de invariante.
  * En modo invariante, cada hilo reserva una ejecución completa mediante
  * permisos antes de intentar disparar su secuencia.
  */
@@ -19,23 +20,29 @@ public class Threads implements Runnable {
   private final Semaphore invariantPermits;
   private final AtomicInteger completedInvariants;
   private final boolean isThread0;
+  private final LogService log;
 
   /**
    * Construye un worker de ejecución de transiciones.
    *
-   * @param path secuencia de transiciones a ejecutar por este hilo.
-   * @param repeatCount cantidad nominal de repeticiones (reservado para compatibilidad).
-   * @param rdp red de Petri asociada (no utilizada directamente en esta versión).
-   * @param monitor monitor usado para disparar transiciones.
-   * @param invariantPermits semáforo que limita invariantes completos a ejecutar.
+   * @param path                secuencia de transiciones a ejecutar por este
+   *                            hilo.
+   * @param repeatCount         cantidad nominal de repeticiones (reservado para
+   *                            compatibilidad).
+   * @param rdp                 red de Petri asociada (no utilizada directamente
+   *                            en esta versión).
+   * @param monitor             monitor usado para disparar transiciones.
+   * @param invariantPermits    semáforo que limita invariantes completos a
+   *                            ejecutar.
    * @param completedInvariants contador global de invariantes completados.
-   * @param totalInvariants objetivo total de invariantes.
-   * @param isThread0 {@code true} si el hilo actúa como habilitador principal.
+   * @param totalInvariants     objetivo total de invariantes.
+   * @param isThread0           {@code true} si el hilo actúa como habilitador
+   *                            principal.
    */
   public Threads(Vector<Integer> path, int repeatCount, RdP rdp,
-      MonitorInterface monitor, Semaphore invariantPermits, AtomicInteger completedInvariants,
-      int totalInvariants,
-      boolean isThread0) {
+      MonitorInterface monitor, Semaphore invariantPermits,
+      AtomicInteger completedInvariants, int totalInvariants,
+      boolean isThread0, LogService log) {
     this.path = path;
     this.repeatCount = repeatCount;
     this.totalInvariants = totalInvariants;
@@ -43,12 +50,14 @@ public class Threads implements Runnable {
     this.invariantPermits = invariantPermits;
     this.completedInvariants = completedInvariants;
     this.isThread0 = isThread0;
+    this.log = log;
   }
 
   /**
    * Ejecuta el ciclo principal del hilo según su rol.
    *
-   * <p>Si es hilo habilitador, intenta disparar continuamente su transición de
+   * <p>
+   * Si es hilo habilitador, intenta disparar continuamente su transición de
    * entrada hasta alcanzar el objetivo global o ser interrumpido. Si es hilo de
    * invariante, reserva un permiso y ejecuta su secuencia completa.
    */
@@ -58,8 +67,8 @@ public class Threads implements Runnable {
       // Hilo 0: mantiene el flujo de habilitación hasta completar invariantes.
       int transition = path.get(0);
       int run = 0;
-      while (completedInvariants.get() < totalInvariants
-          && !Thread.currentThread().isInterrupted()) {
+      while (completedInvariants.get() < totalInvariants &&
+          !Thread.currentThread().isInterrupted()) {
         run++;
         boolean fired = monitor.fireTransition(transition);
         if (fired) {
@@ -67,8 +76,8 @@ public class Threads implements Runnable {
               "Thread %s: Successfully fired transition %d (Run %d).%n",
               Thread.currentThread().getName(), transition, run);
         } else {
-          if (completedInvariants.get() >= totalInvariants
-              || Thread.currentThread().isInterrupted()) {
+          if (completedInvariants.get() >= totalInvariants ||
+              Thread.currentThread().isInterrupted()) {
             break;
           }
           System.out.printf(
@@ -105,7 +114,8 @@ public class Threads implements Runnable {
       System.out.printf("Thread %s: Stopping as all invariants are complete.%n",
           Thread.currentThread().getName());
     } else {
-      System.out.printf("Thread %s: Stopping (no invariant permit available).%n",
+      System.out.printf(
+          "Thread %s: Stopping (no invariant permit available).%n",
           Thread.currentThread().getName());
     }
   }

@@ -1,11 +1,11 @@
 package org.concurrent.project;
 
-import org.ejml.data.DMatrixRMaj;
-import org.ejml.dense.row.CommonOps_DDRM;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Semaphore;
+import org.ejml.data.DMatrixRMaj;
+import org.ejml.dense.row.CommonOps_DDRM;
 
 /**
  * Coordina el disparo concurrente de transiciones de la RdP mediante exclusión
@@ -18,387 +18,438 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * cuando una transición vuelve a estar habilitada para disparo.
  */
 public class Monitor implements MonitorInterface {
-    /** Margen práctico para LTF en ejecución sobre JVM. */
-    private static final long BETA_SLACK_MS = 20L;
-    /** Configuración base de transiciones temporizadas: {transition, alphaMs}. */
-    private static final int[][] TIMED_TRANSITIONS_BASE_MS = {
-            {1, 130},
-            {4, 70},
-            {5, 70},
-            {8, 100},
-            {9, 50},
-            {10, 50}
-    };
+  /** Margen práctico para LTF en ejecución sobre JVM. */
+  private static final long BETA_SLACK_MS = 20L;
+  /** Configuración base de transiciones temporizadas: {transition, alphaMs}. */
+  private static final int[][] TIMED_TRANSITIONS_BASE_MS = {
+      { 1, 130 }, { 4, 70 }, { 5, 70 }, { 8, 100 }, { 9, 50 }, { 10, 50 } };
 
-    private enum TransitionStep {
-        FIRED,
-        RETRY_MONITOR_RELEASED,
-        RETRY_MONITOR_HELD
+  private enum TransitionStep {
+    FIRED,
+    RETRY_MONITOR_RELEASED,
+    RETRY_MONITOR_HELD
+  }
+
+  private final Semaphore entry;
+  private final Queues Queues;
+  private final RdP rdp;
+  private final Policy policy;
+  private final CopyOnWriteArrayList<String> successfullyFired;
+  private final TimeRestrictions time;
+  private final LogService log;
+
+  private final List<Invariants.PInvariant> pInvariants = Invariants.defaultPInvariants();
+
+  /**
+   * Construye el monitor y configura transiciones temporizadas opcionales.
+   *
+   * <p>
+   * Inicializa semáforo de entrada, colas de espera y utilidades de tiempo.
+   * Si {@code timed} es {@code true}, registra las transiciones temporizadas
+   * definidas para esta simulación y libera hilos de instancias recién
+   * habilitadas.
+   *
+   * @param rdp   red de Petri controlada por el monitor.
+   * @param timed indica si se habilitan restricciones temporales.
+   */
+  Monitor(RdP rdp, boolean timed, LogService log) {
+    entry = new Semaphore(1, true);
+    this.rdp = rdp;
+    this.log = log;
+    Queues = new Queues();
+    policy = new Policy(true);
+    successfullyFired = new CopyOnWriteArrayList<>();
+    time = new TimeRestrictions();
+
+    configureTimedTransitions(timed);
+  }
+
+  /**
+   * Aplica configuración temporal inicial en forma declarativa.
+   *
+   * <p>
+   * Si el modo temporizado está activo, registra cada transición con ventana
+   * finita [alpha, alpha + slack] y sincroniza estado temporal inicial con la
+   * sensibilización actual de la red.
+   *
+   * @param timed indica si deben activarse restricciones temporales.
+   */
+  private void configureTimedTransitions(boolean timed) {
+    if (!timed) {
+      return;
     }
-
-    private final Semaphore entry;
-    private final Queues Queues;
-    private final RdP rdp;
-    private final Policy policy;
-    private final CopyOnWriteArrayList<String> successfullyFired;
-    private final TimeRestrictions time;
-
-    /**
-     * Construye el monitor y configura transiciones temporizadas opcionales.
-     *
-     * <p>
-     * Inicializa semáforo de entrada, colas de espera y utilidades de tiempo.
-     * Si {@code timed} es {@code true}, registra las transiciones temporizadas
-     * definidas para esta simulación y libera hilos de instancias recién
-     * habilitadas.
-     *
-     * @param rdp   red de Petri controlada por el monitor.
-     * @param timed indica si se habilitan restricciones temporales.
-     */
-    Monitor(RdP rdp, boolean timed) {
-        entry = new Semaphore(1, true);
-        this.rdp = rdp;
-        Queues = new Queues();
-        policy = new Policy(true);
-        successfullyFired = new CopyOnWriteArrayList<>();
-        time = new TimeRestrictions();
-
-        configureTimedTransitions(timed);
+    for (int[] transitionConfig : TIMED_TRANSITIONS_BASE_MS) {
+      int transition = transitionConfig[0];
+      long alphaMs = transitionConfig[1];
+      long betaMs = alphaMs + BETA_SLACK_MS;
+      time.setTimedTransition(transition, alphaMs, betaMs);
     }
+    time.updateFromSensitized(rdp.getSensitized());
+  }
 
-    /**
-     * Aplica configuración temporal inicial en forma declarativa.
-     *
-     * <p>
-     * Si el modo temporizado está activo, registra cada transición con ventana
-     * finita [alpha, alpha + slack] y sincroniza estado temporal inicial con la
-     * sensibilización actual de la red.
-     *
-     * @param timed indica si deben activarse restricciones temporales.
-     */
-    private void configureTimedTransitions(boolean timed) {
-        if (!timed) {
-            return;
-        }
-        for (int[] transitionConfig : TIMED_TRANSITIONS_BASE_MS) {
-            int transition = transitionConfig[0];
-            long alphaMs = transitionConfig[1];
-            long betaMs = alphaMs + BETA_SLACK_MS;
-            time.setTimedTransition(transition, alphaMs, betaMs);
-        }
-        time.updateFromSensitized(rdp.getSensitized());
-    }
+  /**
+   * Intenta disparar una transición bajo exclusión mutua y semántica temporal
+   * débil.
+   *
+   * <p>
+   * Valida índice, toma el monitor, refresca estado de sensibilización temporal
+   * y evalúa si el disparo está permitido. Si la transición no puede dispararse
+   * en
+   * este ciclo (no sensibilizada, temprana o vencida), libera monitor y espera
+   * el evento correspondiente antes de reintentar.
+   *
+   * @param transition identificador de transición a disparar.
+   * @return {@code true} si se disparó; {@code false} si el hilo fue
+   *         interrumpido.
+   * @throws IllegalArgumentException si el índice de transición es inválido.
+   */
+  @Override
+  public boolean fireTransition(int transition) {
+    validateTransitionIndex(transition);
 
-    /**
-     * Intenta disparar una transición bajo exclusión mutua y semántica temporal
-     * débil.
-     *
-     * <p>
-     * Valida índice, toma el monitor, refresca estado de sensibilización temporal
-     * y evalúa si el disparo está permitido. Si la transición no puede dispararse
-     * en
-     * este ciclo (no sensibilizada, temprana o vencida), libera monitor y espera el
-     * evento correspondiente antes de reintentar.
-     *
-     * @param transition identificador de transición a disparar.
-     * @return {@code true} si se disparó; {@code false} si el hilo fue
-     *         interrumpido.
-     * @throws IllegalArgumentException si el índice de transición es inválido.
-     */
-    @Override
-    public boolean fireTransition(int transition) {
-        validateTransitionIndex(transition);
+    while (true) {
+      boolean monitorHeld = false;
+      try {
+        catchMonitor();
+        monitorHeld = true;
+        System.out.println(Thread.currentThread().getName() + " in monitor.");
+        boolean isSensitized = (rdp.getSensitized().get(0, transition) == 1);
 
-        while (true) {
-            boolean monitorHeld = false;
-            try {
-                catchMonitor();
-                monitorHeld = true;
-                System.out.println(Thread.currentThread().getName() + " in monitor.");
-                boolean isSensitized = (rdp.getSensitized().get(0, transition) == 1);
-
-                if (isSensitized) {
-                    TransitionStep step = handleSensitizedTransition(transition);
-                    if (step == TransitionStep.FIRED) {
-                        return true;
-                    }
-                    if (step == TransitionStep.RETRY_MONITOR_RELEASED) {
-                        monitorHeld = false;
-                    }
-                    continue;
-                }
-
-                waitForSensitization(transition);
-                monitorHeld = false;
-                continue;
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return false;
-            } finally {
-                if (monitorHeld) {
-                    releaseMonitor();
-                }
-            }
-        }
-    }
-
-    /**
-     * Resuelve el flujo de una transición sensibilizada según su evaluación temporal.
-     *
-     * @param transition transición sensibilizada a evaluar.
-     * @return próximo paso de control para el ciclo principal.
-     * @throws InterruptedException si el hilo es interrumpido durante una espera.
-     */
-    private TransitionStep handleSensitizedTransition(int transition) throws InterruptedException {
-        TimeRestrictions.FireEvaluation evaluation = time.evaluateFire(transition);
-        switch (evaluation) {
-            case ALLOWED:
-                fireAndReleaseTransition(transition);
-                return TransitionStep.FIRED;
-            case TOO_EARLY:
-                waitUntilEarliestFireTime(transition);
-                return TransitionStep.RETRY_MONITOR_RELEASED;
-            case EXPIRED:
-                waitForFreshEnableInstance(transition);
-                return TransitionStep.RETRY_MONITOR_RELEASED;
-            case NOT_ENABLED:
-                throw new IllegalStateException(
-                        "Estado inconsistente: transición sensibilizada en RdP pero NOT_ENABLED en temporización. T"
-                                + transition);
-            default:
-                throw new IllegalStateException("FireEvaluation no soportada: " + evaluation);
-        }
-    }
-
-    /**
-     * Espera hasta alcanzar ETF para una transición temporizada.
-     *
-     * <p>Libera el monitor antes de esperar y usa verificación de versión para
-     * cancelar la espera si cambia la instancia de habilitación.
-     *
-     * @param transition transición en estado {@code TOO_EARLY}.
-     * @throws InterruptedException si el hilo es interrumpido durante la espera.
-     */
-    private void waitUntilEarliestFireTime(int transition) throws InterruptedException {
-        System.out.println("T" + transition
-                + " no puede ser disparada por restricción de tiempo. Esperando...");
-        long remainingMs = time.getRemainingToEarliest(transition);
-        long observedSequence = time.getEnableSequence(transition);
-        releaseMonitor();
-        sleepWithVersionCheck(remainingMs, transition, observedSequence);
-    }
-
-    /**
-     * Espera una nueva instancia de habilitación para una transición expirada.
-     *
-     * <p>La espera se mantiene mientras la versión de habilitación permanezca igual
-     * a la instancia vencida.
-     *
-     * @param transition transición en estado {@code EXPIRED}.
-     * @throws InterruptedException si el hilo es interrumpido durante la espera.
-     */
-    private void waitForFreshEnableInstance(int transition) throws InterruptedException {
-        System.out.println(
-                "T" + transition + " vencida para esta instancia. Esperando nueva habilitación.");
-        long expiredSequence = time.getEnableSequence(transition);
-        Queues.incrementWaitingCount(transition);
-        releaseMonitor();
-        while (true) {
-            if (time.getEnableSequence(transition) != expiredSequence) {
-                return;
-            }
-            Queues.getSemaphoreForTransition(transition).acquire();
-            if (time.getEnableSequence(transition) != expiredSequence) {
-                return;
-            }
-        }
-    }
-
-    /**
-     * Bloquea el hilo hasta que la transición vuelva a sensibilizarse y sea señalada.
-     *
-     * <p>Incrementa contabilidad de espera, libera el monitor y aguarda en el
-     * semáforo asociado a la transición.
-     *
-     * @param transition transición actualmente no sensibilizada.
-     * @throws InterruptedException si el hilo es interrumpido durante la espera.
-     */
-    private void waitForSensitization(int transition) throws InterruptedException {
-        System.out.println("T" + transition + " no sensibilizada. Esperando en semáforo: "
-                + Thread.currentThread().getName());
-        Queues.incrementWaitingCount(transition);
-        releaseMonitor();
-        Queues.getSemaphoreForTransition(transition).acquire();
-    }
-
-    /**
-     * Duerme en intervalos cortos validando cambios de versión de habilitación.
-     *
-     * <p>
-     * Evita esperas monolíticas largas para mejorar capacidad de respuesta ante
-     * cambios de estado. Si cambia la versión observada, retorna antes del tiempo
-     * objetivo para re-evaluar el disparo.
-     *
-     * @param totalSleepMs     tiempo total de espera deseado en milisegundos.
-     * @param transition       transición observada durante la espera.
-     * @param observedSequence versión de habilitación esperada.
-     * @throws InterruptedException si el hilo es interrumpido durante el sueño.
-     */
-    private void sleepWithVersionCheck(
-            long totalSleepMs,
-            int transition,
-            long observedSequence) throws InterruptedException {
-        long remaining = Math.max(totalSleepMs, 0L);
-        while (remaining > 0) {
-            if (time.getEnableSequence(transition) != observedSequence) {
-                return;
-            }
-            long step = remaining;
-            Thread.sleep(step);
-            remaining -= step;
-        }
-    }
-
-    /**
-     * Adquiere el monitor de exclusión mutua de la red.
-     *
-     * <p>
-     * Serializa el acceso a estado compartido de RdP y estructuras auxiliares,
-     * para que evaluación temporal y disparo sean atómicos frente a otros hilos.
-     *
-     * @throws InterruptedException si el hilo es interrumpido mientras espera.
-     */
-    private void catchMonitor() throws InterruptedException {
-        System.out.println("Catching Monitor");
-        entry.acquire();
-    }
-
-    /**
-     * Libera el monitor de exclusión mutua.
-     *
-     * <p>
-     * Permite que otros hilos en espera ingresen al ciclo de evaluación/disparo.
-     */
-    private void releaseMonitor() {
-        System.out.println("Releasing monitor");
-        entry.release();
-    }
-
-    /**
-     * Valida que un índice de transición pertenezca al rango definido por la RdP.
-     *
-     * @param transition índice de transición a validar.
-     * @throws IllegalArgumentException si está fuera del rango válido.
-     */
-    private void validateTransitionIndex(int transition) {
-        int totalTransitions = rdp.getIncidencia().numCols;
-        if (transition < 0 || transition >= totalTransitions) {
-            throw new IllegalArgumentException("Transition fuera de rango: " + transition);
-        }
-    }
-
-    /**
-     * Dispara la transición y actualiza estructuras de sensibilización/colas.
-     *
-     * <p>
-     * Construye vector de disparo, ejecuta disparo en RdP, refresca temporización
-     * para nueva instancia habilitada, libera esperas relevantes y registra
-     * métricas
-     * de transiciones exitosas.
-     *
-     * @param transition transición a disparar.
-     */
-    private void fireAndReleaseTransition(int transition) {
-        DMatrixRMaj firingVector = createFiringVector(transition);
-        rdp.fireTransition(firingVector, transition);
-        List<Integer> newlyEnabledTransitions = time.updateFromSensitized(rdp.getSensitized());
-        time.onTransitionFired(transition, rdp.getSensitized().get(0, transition) == 1);
-        releaseWaitersOnFreshEnable(newlyEnabledTransitions);
-        updateSensitizedAndRelease();
-        successfullyFired.add("T" + transition);
-        printSuccessfullyFired();
-        System.out.println("Transition " + transition + " fired successfully by " + Thread.currentThread().getName());
-    }
-
-    /**
-     * Despierta hilos esperando por transiciones recién habilitadas.
-     *
-     * <p>
-     * Para cada transición habilitada en este refresco, libera permisos en su
-     * semáforo según el número de hilos actualmente contados en espera.
-     *
-     * @param newlyEnabledTransitions transiciones detectadas como nuevas
-     *                                habilitadas.
-     */
-    private void releaseWaitersOnFreshEnable(List<Integer> newlyEnabledTransitions) {
-        for (int transition : newlyEnabledTransitions) {
-            while (Queues.getWaitingCounts().get(0, transition) >= 1) {
-                Queues.decrementWaitingCount(transition);
-                Queues.getSemaphoreForTransition(transition).release();
-            }
-        }
-    }
-
-    /**
-     * Imprime un resumen del total de transiciones disparadas exitosamente.
-     *
-     * <p>
-     * Se informa únicamente el conteo acumulado para reducir trazas en ejecuciones
-     * largas.
-     */
-    private void printSuccessfullyFired() {
-        System.out.println("Successfully fired transitions count: " + successfullyFired.size());
-    }
-
-    /**
-     * Crea el vector de disparo unitario para una transición.
-     *
-     * <p>
-     * El vector contiene un único valor 1 en la posición de la transición y 0
-     * en el resto de posiciones.
-     *
-     * @param transition índice de transición objetivo.
-     * @return matriz columna EJML con el vector de disparo.
-     */
-    private DMatrixRMaj createFiringVector(int transition) {
-        double[] firing = new double[rdp.getIncidencia().numCols];
-        firing[transition] = 1;
-        return new DMatrixRMaj(firing.length, 1, true, firing);
-    }
-
-    /**
-     * Libera esperas de transiciones estructuralmente sensibilizadas y
-     * temporalmente permitidas.
-     *
-     * <p>
-     * Calcula intersección entre transición sensibilizada y cantidad de hilos
-     * esperando. Solo libera semáforos cuando la evaluación temporal sin efectos
-     * laterales devuelve {@code ALLOWED}.
-     */
-    private void updateSensitizedAndRelease() {
-        DMatrixRMaj sensitized = rdp.getSensitized();
-        DMatrixRMaj WaitingCounts = Queues.getWaitingCounts();
-        DMatrixRMaj result = new DMatrixRMaj(sensitized.numRows, sensitized.numCols);
-        CommonOps_DDRM.elementMult(sensitized, WaitingCounts, result);
-        List<Integer> availableTransitions = new ArrayList<>();
-
-        for (int i = 0; i < result.numCols; i++) {
-            if (result.get(0, i) >= 1
-                    && time.evaluateFireNoSideEffects(i) == TimeRestrictions.FireEvaluation.ALLOWED) {
-                availableTransitions.add(i);
-            }
+        if (isSensitized) {
+          TransitionStep step = handleSensitizedTransition(transition);
+          if (step == TransitionStep.FIRED) {
+            return true;
+          }
+          if (step == TransitionStep.RETRY_MONITOR_RELEASED) {
+            monitorHeld = false;
+          }
+          continue;
         }
 
-        if (!availableTransitions.isEmpty()) {
-            for (int transitionToRelease : availableTransitions) {
-                System.out.printf("Transition %d sensitized. Releasing semaphore.%n", transitionToRelease);
-                Queues.decrementWaitingCount(transitionToRelease);
-                System.out.printf("Decremented waiting count for transition %d. New count: %.0f%n",
-                        transitionToRelease, Queues.getWaitingCounts().get(0, transitionToRelease));
-                Queues.getSemaphoreForTransition(transitionToRelease).release();
-            }
-        } else {
-            System.out.println("No available transitions to release.");
+        waitForSensitization(transition);
+        monitorHeld = false;
+        continue;
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        return false;
+      } finally {
+        if (monitorHeld) {
+          releaseMonitor();
         }
+      }
     }
+  }
+
+  /**
+   * Resuelve el flujo de una transición sensibilizada según su evaluación
+   * temporal.
+   *
+   * @param transition transición sensibilizada a evaluar.
+   * @return próximo paso de control para el ciclo principal.
+   * @throws InterruptedException si el hilo es interrumpido durante una espera.
+   */
+  private TransitionStep handleSensitizedTransition(int transition)
+      throws InterruptedException {
+    TimeRestrictions.FireEvaluation evaluation = time.evaluateFire(transition);
+    switch (evaluation) {
+      case ALLOWED:
+        fireAndReleaseTransition(transition);
+        return TransitionStep.FIRED;
+      case TOO_EARLY:
+        waitUntilEarliestFireTime(transition);
+        return TransitionStep.RETRY_MONITOR_RELEASED;
+      case EXPIRED:
+        waitForFreshEnableInstance(transition);
+        return TransitionStep.RETRY_MONITOR_RELEASED;
+      case NOT_ENABLED:
+        throw new IllegalStateException(
+            "Estado inconsistente: transición sensibilizada en RdP pero "
+                + "NOT_ENABLED en temporización. T" + transition);
+      default:
+        throw new IllegalStateException("FireEvaluation no soportada: " +
+            evaluation);
+    }
+  }
+
+  /**
+   * Espera hasta alcanzar ETF para una transición temporizada.
+   *
+   * <p>
+   * Libera el monitor antes de esperar y usa verificación de versión para
+   * cancelar la espera si cambia la instancia de habilitación.
+   *
+   * @param transition transición en estado {@code TOO_EARLY}.
+   * @throws InterruptedException si el hilo es interrumpido durante la espera.
+   */
+  private void waitUntilEarliestFireTime(int transition)
+      throws InterruptedException {
+    System.out.println(
+        "T" + transition +
+            " no puede ser disparada por restricción de tiempo. Esperando...");
+    long remainingMs = time.getRemainingToEarliest(transition);
+    long observedSequence = time.getEnableSequence(transition);
+    releaseMonitor();
+    sleepWithVersionCheck(remainingMs, transition, observedSequence);
+  }
+
+  /**
+   * Espera una nueva instancia de habilitación para una transición expirada.
+   *
+   * <p>
+   * La espera se mantiene mientras la versión de habilitación permanezca igual
+   * a la instancia vencida.
+   *
+   * @param transition transición en estado {@code EXPIRED}.
+   * @throws InterruptedException si el hilo es interrumpido durante la espera.
+   */
+  private void waitForFreshEnableInstance(int transition)
+      throws InterruptedException {
+    System.out.println(
+        "T" + transition +
+            " vencida para esta instancia. Esperando nueva habilitación.");
+    long expiredSequence = time.getEnableSequence(transition);
+    Queues.incrementWaitingCount(transition);
+    releaseMonitor();
+    while (true) {
+      if (time.getEnableSequence(transition) != expiredSequence) {
+        return;
+      }
+      Queues.getSemaphoreForTransition(transition).acquire();
+      if (time.getEnableSequence(transition) != expiredSequence) {
+        return;
+      }
+    }
+  }
+
+  /**
+   * Bloquea el hilo hasta que la transición vuelva a sensibilizarse y sea
+   * señalada.
+   *
+   * <p>
+   * Incrementa contabilidad de espera, libera el monitor y aguarda en el
+   * semáforo asociado a la transición.
+   *
+   * @param transition transición actualmente no sensibilizada.
+   * @throws InterruptedException si el hilo es interrumpido durante la espera.
+   */
+  private void waitForSensitization(int transition)
+      throws InterruptedException {
+    System.out.println("T" + transition +
+        " no sensibilizada. Esperando en semáforo: " +
+        Thread.currentThread().getName());
+    Queues.incrementWaitingCount(transition);
+    releaseMonitor();
+    Queues.getSemaphoreForTransition(transition).acquire();
+  }
+
+  /**
+   * Duerme en intervalos cortos validando cambios de versión de habilitación.
+   *
+   * <p>
+   * Evita esperas monolíticas largas para mejorar capacidad de respuesta ante
+   * cambios de estado. Si cambia la versión observada, retorna antes del tiempo
+   * objetivo para re-evaluar el disparo.
+   *
+   * @param totalSleepMs     tiempo total de espera deseado en milisegundos.
+   * @param transition       transición observada durante la espera.
+   * @param observedSequence versión de habilitación esperada.
+   * @throws InterruptedException si el hilo es interrumpido durante el sueño.
+   */
+  private void sleepWithVersionCheck(long totalSleepMs, int transition,
+      long observedSequence)
+      throws InterruptedException {
+    long remaining = Math.max(totalSleepMs, 0L);
+    while (remaining > 0) {
+      if (time.getEnableSequence(transition) != observedSequence) {
+        return;
+      }
+      long step = remaining;
+      Thread.sleep(step);
+      remaining -= step;
+    }
+  }
+
+  /**
+   * Adquiere el monitor de exclusión mutua de la red.
+   *
+   * <p>
+   * Serializa el acceso a estado compartido de RdP y estructuras auxiliares,
+   * para que evaluación temporal y disparo sean atómicos frente a otros hilos.
+   *
+   * @throws InterruptedException si el hilo es interrumpido mientras espera.
+   */
+  private void catchMonitor() throws InterruptedException {
+    System.out.println("Catching Monitor");
+    entry.acquire();
+  }
+
+  /**
+   * Libera el monitor de exclusión mutua.
+   *
+   * <p>
+   * Permite que otros hilos en espera ingresen al ciclo de evaluación/disparo.
+   */
+  private void releaseMonitor() {
+    System.out.println("Releasing monitor");
+    entry.release();
+  }
+
+  /**
+   * Valida que un índice de transición pertenezca al rango definido por la RdP.
+   *
+   * @param transition índice de transición a validar.
+   * @throws IllegalArgumentException si está fuera del rango válido.
+   */
+  private void validateTransitionIndex(int transition) {
+    int totalTransitions = rdp.getIncidencia().numCols;
+    if (transition < 0 || transition >= totalTransitions) {
+      throw new IllegalArgumentException("Transition fuera de rango: " +
+          transition);
+    }
+  }
+
+  /**
+   * Dispara la transición y actualiza estructuras de sensibilización/colas.
+   *
+   * <p>
+   * Construye vector de disparo, ejecuta disparo en RdP, refresca temporización
+   * para nueva instancia habilitada, libera esperas relevantes y registra
+   * métricas
+   * de transiciones exitosas.
+   *
+   * @param transition transición a disparar.
+   */
+  private void fireAndReleaseTransition(int transition) {
+    DMatrixRMaj firingVector = createFiringVector(transition);
+    rdp.fireTransition(firingVector, transition);
+    List<Integer> newlyEnabledTransitions = time.updateFromSensitized(rdp.getSensitized());
+    time.onTransitionFired(transition,
+        rdp.getSensitized().get(0, transition) == 1);
+    releaseWaitersOnFreshEnable(newlyEnabledTransitions);
+    updateSensitizedAndRelease();
+    successfullyFired.add("T" + transition);
+    printSuccessfullyFired();
+    System.out.println("Transition " + transition + " fired successfully by " +
+        Thread.currentThread().getName());
+
+    if (log != null) {
+      DMatrixRMaj markingMatrix = rdp.getMarcadoActual();
+      List<Invariants.PInvariantResult> results = Invariants.checkPInvariants(markingMatrix, pInvariants);
+
+      String pinv = "OK";
+      Invariants.PInvariantResult firstFail = null;
+
+      for (Invariants.PInvariantResult r : results) {
+        if (!r.ok()) {
+          firstFail = r;
+          pinv = "FAIL(" + r.name() + ",got=" + r.got() +
+              ",exp=" + r.expected() + ")";
+          break;
+        }
+      }
+
+      if (firstFail != null) {
+        log.logEvent(Thread.currentThread().getName(),
+            "PINV_FAIL name=" + firstFail.name() + " got=" +
+                firstFail.got() + " exp=" + firstFail.expected());
+      }
+
+      log.logFire(Thread.currentThread().getName(), transition, true,
+          snapshotMarking(), pinv);
+    }
+  }
+
+  private int[] snapshotMarking() {
+    DMatrixRMaj m = rdp.getMarcadoActual(); // 1xP
+    int[] out = new int[m.numCols];
+    for (int i = 0; i < m.numCols; i++)
+      out[i] = (int) m.get(0, i);
+    return out;
+  }
+
+  /**
+   * Despierta hilos esperando por transiciones recién habilitadas.
+   *
+   * <p>
+   * Para cada transición habilitada en este refresco, libera permisos en su
+   * semáforo según el número de hilos actualmente contados en espera.
+   *
+   * @param newlyEnabledTransitions transiciones detectadas como nuevas
+   *                                habilitadas.
+   */
+  private void releaseWaitersOnFreshEnable(List<Integer> newlyEnabledTransitions) {
+    for (int transition : newlyEnabledTransitions) {
+      while (Queues.getWaitingCounts().get(0, transition) >= 1) {
+        Queues.decrementWaitingCount(transition);
+        Queues.getSemaphoreForTransition(transition).release();
+      }
+    }
+  }
+
+  /**
+   * Imprime un resumen del total de transiciones disparadas exitosamente.
+   *
+   * <p>
+   * Se informa únicamente el conteo acumulado para reducir trazas en
+   * ejecuciones largas.
+   */
+  private void printSuccessfullyFired() {
+    System.out.println("Successfully fired transitions count: " +
+        successfullyFired.size());
+  }
+
+  /**
+   * Crea el vector de disparo unitario para una transición.
+   *
+   * <p>
+   * El vector contiene un único valor 1 en la posición de la transición y 0
+   * en el resto de posiciones.
+   *
+   * @param transition índice de transición objetivo.
+   * @return matriz columna EJML con el vector de disparo.
+   */
+  private DMatrixRMaj createFiringVector(int transition) {
+    double[] firing = new double[rdp.getIncidencia().numCols];
+    firing[transition] = 1;
+    return new DMatrixRMaj(firing.length, 1, true, firing);
+  }
+
+  /**
+   * Libera esperas de transiciones estructuralmente sensibilizadas y
+   * temporalmente permitidas.
+   *
+   * <p>
+   * Calcula intersección entre transición sensibilizada y cantidad de hilos
+   * esperando. Solo libera semáforos cuando la evaluación temporal sin efectos
+   * laterales devuelve {@code ALLOWED}.
+   */
+  private void updateSensitizedAndRelease() {
+    DMatrixRMaj sensitized = rdp.getSensitized();
+    DMatrixRMaj WaitingCounts = Queues.getWaitingCounts();
+    DMatrixRMaj result = new DMatrixRMaj(sensitized.numRows, sensitized.numCols);
+    CommonOps_DDRM.elementMult(sensitized, WaitingCounts, result);
+    List<Integer> availableTransitions = new ArrayList<>();
+
+    for (int i = 0; i < result.numCols; i++) {
+      if (result.get(0, i) >= 1 &&
+          time.evaluateFireNoSideEffects(i) == TimeRestrictions.FireEvaluation.ALLOWED) {
+        availableTransitions.add(i);
+      }
+    }
+
+    if (!availableTransitions.isEmpty()) {
+      for (int transitionToRelease : availableTransitions) {
+        System.out.printf("Transition %d sensitized. Releasing semaphore.%n",
+            transitionToRelease);
+        Queues.decrementWaitingCount(transitionToRelease);
+        System.out.printf(
+            "Decremented waiting count for transition %d. New count: %.0f%n",
+            transitionToRelease,
+            Queues.getWaitingCounts().get(0, transitionToRelease));
+        Queues.getSemaphoreForTransition(transitionToRelease).release();
+      }
+    } else {
+      System.out.println("No available transitions to release.");
+    }
+  }
 }
