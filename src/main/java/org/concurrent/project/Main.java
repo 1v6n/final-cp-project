@@ -24,67 +24,97 @@ public class Main {
    * @param args argumentos de línea de comandos.
    */
   public static void main(String[] args) {
+
     Path logPath = Paths.get("logs", "run.log");
 
     try (LogService logService = new LogService(logPath)) {
+
       RdP rdP = new RdP();
       Monitor monitor = new Monitor(rdP, timed, logService);
+
       long startTime = System.currentTimeMillis();
 
-      int[][] invariants = { { 1, 2, 5, 6, 9, 10, 11 },
+      int[][] invariants = {
+          { 1, 2, 5, 6, 9, 10, 11 },
           { 1, 3, 4, 6, 9, 10, 11 },
           { 1, 2, 5, 7, 8, 11 },
-          { 1, 3, 4, 7, 8, 11 } };
+          { 1, 3, 4, 7, 8, 11 }
+      };
 
       Semaphore invariantPermits = new Semaphore(TOTAL_RUNS, true);
       Semaphore t0Permits = new Semaphore(TOTAL_RUNS, true);
       AtomicInteger completedInvariants = new AtomicInteger(0);
+
+      // ----------- Thread 0 -----------
       Vector<Integer> pathForThread0 = new Vector<>();
       pathForThread0.add(0);
-      Thread thread0 = new Thread(new Threads(pathForThread0, rdP, monitor,
-          invariantPermits, t0Permits, completedInvariants,
-          TOTAL_RUNS, true, logService),
+
+      Thread thread0 = new Thread(
+          new Threads(pathForThread0, rdP, monitor,
+              invariantPermits, t0Permits,
+              completedInvariants,
+              TOTAL_RUNS,
+              true,
+              logService),
           "Thread-0");
 
+      // ----------- Invariant Threads -----------
       Thread[] invariantThreads = new Thread[invariants.length];
 
       for (int i = 0; i < invariants.length; i++) {
-        Vector<Integer> pathForInvariant = new Vector<>();
-        for (int transition : invariants[i]) {
-          pathForInvariant.add(transition);
+
+        Vector<Integer> path = new Vector<>();
+        for (int t : invariants[i]) {
+          path.add(t);
         }
+
         invariantThreads[i] = new Thread(
-            new Threads(pathForInvariant, rdP, monitor, invariantPermits,
-                t0Permits, completedInvariants, TOTAL_RUNS, false, logService),
+            new Threads(path, rdP, monitor,
+                invariantPermits, t0Permits,
+                completedInvariants,
+                TOTAL_RUNS,
+                false,
+                logService),
             "Invariant-Thread-" + (i + 1));
       }
 
+      // ----------- Start -----------
       thread0.start();
-      for (Thread thread : invariantThreads) {
-        thread.start();
+      for (Thread t : invariantThreads) {
+        t.start();
       }
 
+      // ----------- Wait for completion -----------
       try {
         while (completedInvariants.get() < TOTAL_RUNS) {
           Thread.sleep(10);
         }
 
+        // Interrumpimos TODOS los hilos
         thread0.interrupt();
-        for (Thread thread : invariantThreads) {
-          thread.join();
+        for (Thread t : invariantThreads) {
+          t.interrupt();
         }
+
+        // Esperamos que terminen
         thread0.join();
+        for (Thread t : invariantThreads) {
+          t.join();
+        }
+
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();
-        e.printStackTrace();
       }
 
       System.out.println("All threads have completed.");
       System.out.println("Total time elapsed: " +
           (System.currentTimeMillis() - startTime));
+
+      System.out.println("Total invariants runned:" + completedInvariants.get());
+
+      monitor.getPolicy().printSummary();
+
     } catch (IOException e) {
-      System.err.println("Failed to initialize LogService at " + logPath +
-          ": " + e.getMessage());
       e.printStackTrace();
     }
   }
