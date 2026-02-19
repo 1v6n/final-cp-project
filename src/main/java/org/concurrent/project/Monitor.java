@@ -4,6 +4,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Semaphore;
+
+import org.concurrent.project.Policy.PolicyMode;
+import org.concurrent.project.TimeRestrictions.FireEvaluation;
 import org.ejml.data.DMatrixRMaj;
 import org.ejml.dense.row.CommonOps_DDRM;
 
@@ -19,7 +22,7 @@ import org.ejml.dense.row.CommonOps_DDRM;
  */
 public class Monitor implements MonitorInterface {
   /** Margen práctico para LTF en ejecución sobre JVM. */
-  private static final long BETA_SLACK_MS = 20L;
+  private static final long BETA_SLACK_MS = 50L;
   /** Configuración base de transiciones temporizadas: {transition, alphaMs}. */
   private static final int[][] TIMED_TRANSITIONS_BASE_MS = {
       { 1, 130 }, { 4, 70 }, { 5, 70 }, { 8, 100 }, { 9, 50 }, { 10, 50 } };
@@ -37,6 +40,9 @@ public class Monitor implements MonitorInterface {
   private final CopyOnWriteArrayList<String> successfullyFired;
   private final TimeRestrictions time;
   private final LogService log;
+  private int forcedAgentTransition = -1;
+  private int forcedReservationTransition = -1;
+  private volatile boolean systemRunning = true;
 
   private final List<Invariants.PInvariant> pInvariants = Invariants.defaultPInvariants();
 
@@ -57,7 +63,7 @@ public class Monitor implements MonitorInterface {
     this.rdp = rdp;
     this.log = log;
     Queues = new Queues();
-    policy = new Policy(true);
+    policy = new Policy(PolicyMode.PRIORITIZED);
     successfullyFired = new CopyOnWriteArrayList<>();
     time = new TimeRestrictions();
 
@@ -112,7 +118,6 @@ public class Monitor implements MonitorInterface {
       try {
         catchMonitor();
         monitorHeld = true;
-        System.out.println(Thread.currentThread().getName() + " in monitor.");
         boolean isSensitized = (rdp.getSensitized().get(0, transition) == 1);
 
         if (isSensitized) {
@@ -150,24 +155,79 @@ public class Monitor implements MonitorInterface {
    */
   private TransitionStep handleSensitizedTransition(int transition)
       throws InterruptedException {
+
     TimeRestrictions.FireEvaluation evaluation = time.evaluateFire(transition);
+
     switch (evaluation) {
+
       case ALLOWED:
+
+        // ==============================
+        // CONFLICTO AGENTES (T2 vs T3)
+        // ==============================
+        if ((transition == 2 || transition == 3) &&
+            isTransitionAllowed(2) &&
+            isTransitionAllowed(3)) {
+
+          if (forcedAgentTransition == -1) {
+            forcedAgentTransition = policy.chooseTransition(List.of(2, 3));
+          }
+
+          if (transition != forcedAgentTransition) {
+            waitForSensitization(transition);
+            return TransitionStep.RETRY_MONITOR_RELEASED;
+          }
+
+          // Soy el elegido
+          policy.recordConflictDecision(forcedAgentTransition);
+          forcedAgentTransition = -1;
+        }
+
+        // =================================
+        // CONFLICTO RESERVAS (T6 vs T7)
+        // =================================
+        else if ((transition == 6 || transition == 7) &&
+            isTransitionAllowed(6) &&
+            isTransitionAllowed(7)) {
+
+          if (forcedReservationTransition == -1) {
+            forcedReservationTransition = policy.chooseTransition(List.of(6, 7));
+          }
+
+          if (transition != forcedReservationTransition) {
+            waitForSensitization(transition);
+            return TransitionStep.RETRY_MONITOR_RELEASED;
+          }
+
+          // Soy el elegido
+          policy.recordConflictDecision(forcedReservationTransition);
+          forcedReservationTransition = -1;
+        } else {
+
+        }
+        // ======================
+        // DISPARO NORMAL
+        // ======================
         fireAndReleaseTransition(transition);
+        policy.recordFire(transition);
         return TransitionStep.FIRED;
+
       case TOO_EARLY:
         waitUntilEarliestFireTime(transition);
         return TransitionStep.RETRY_MONITOR_RELEASED;
+
       case EXPIRED:
+
         waitForFreshEnableInstance(transition);
         return TransitionStep.RETRY_MONITOR_RELEASED;
+
       case NOT_ENABLED:
         throw new IllegalStateException(
             "Estado inconsistente: transición sensibilizada en RdP pero "
                 + "NOT_ENABLED en temporización. T" + transition);
+
       default:
-        throw new IllegalStateException("FireEvaluation no soportada: " +
-            evaluation);
+        throw new IllegalStateException("FireEvaluation no soportada: " + evaluation);
     }
   }
 
@@ -439,17 +499,19 @@ public class Monitor implements MonitorInterface {
 
     if (!availableTransitions.isEmpty()) {
       for (int transitionToRelease : availableTransitions) {
-        System.out.printf("Transition %d sensitized. Releasing semaphore.%n",
-            transitionToRelease);
         Queues.decrementWaitingCount(transitionToRelease);
-        System.out.printf(
-            "Decremented waiting count for transition %d. New count: %.0f%n",
-            transitionToRelease,
-            Queues.getWaitingCounts().get(0, transitionToRelease));
         Queues.getSemaphoreForTransition(transitionToRelease).release();
       }
-    } else {
-      System.out.println("No available transitions to release.");
     }
   }
+
+  public Policy getPolicy() {
+    return policy;
+  }
+
+  private boolean isTransitionAllowed(int t) {
+    return rdp.getSensitized().get(0, t) == 1 &&
+        time.evaluateFireNoSideEffects(t) == FireEvaluation.ALLOWED;
+  }
+
 }
