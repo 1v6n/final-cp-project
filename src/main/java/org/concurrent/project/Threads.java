@@ -63,62 +63,65 @@ public class Threads implements Runnable {
    */
   @Override
   public void run() {
+
     if (isThread0) {
-      // Hilo 0: mantiene el flujo de habilitación hasta completar invariantes.
+
       int transition = path.get(0);
-      int run = 0;
+
       while (!Thread.currentThread().isInterrupted()) {
-        if (!t0Permits.tryAcquire()) {
+
+        if (completedInvariants.get() >= totalInvariants)
           break;
-        }
-        run++;
+
         boolean fired = monitor.fireTransition(transition);
-        if (fired) {
-          System.out.printf(
-              "Thread %s: Successfully fired transition %d (Run %d).%n",
-              Thread.currentThread().getName(), transition, run);
-        } else {
+
+        if (!fired) {
           if (completedInvariants.get() >= totalInvariants ||
               Thread.currentThread().isInterrupted()) {
             break;
           }
-          System.out.printf(
-              "Thread %s: Failed to fire transition %d (Run %d).%n",
-              Thread.currentThread().getName(), transition, run);
         }
       }
-      System.out.printf("Thread %s: Completed all runs.%n",
-          Thread.currentThread().getName());
+
     } else {
-      // Hilos de invariante: reservan una ejecución completa antes de correrla.
-      while (invariantPermits.tryAcquire()) {
+
+      while (!Thread.currentThread().isInterrupted()) {
+
+        // Chequeo global antes de empezar
+        int current = completedInvariants.get();
+        if (current >= totalInvariants)
+          break;
+
+        // Ejecutar secuencia completa
         for (int transition : path) {
-          if (monitor.fireTransition(transition)) {
-            System.out.printf("Thread %s: Successfully fired transition %d.%n",
-                Thread.currentThread().getName(), transition);
-          } else {
-            System.out.printf("Thread %s: Failed to fire transition %d.%n",
-                Thread.currentThread().getName(), transition);
+
+          if (completedInvariants.get() >= totalInvariants)
+            return;
+
+          if (!monitor.fireTransition(transition)) {
             return;
           }
         }
+
+        // Reclamar slot global de manera atómica
         int completed = completedInvariants.incrementAndGet();
-        int remaining = Math.max(totalInvariants - completed, 0);
+
+        if (completed > totalInvariants) {
+          // Evita overshoot
+          completedInvariants.decrementAndGet();
+          break;
+        }
+
+        int remaining = totalInvariants - completed;
+
         System.out.printf(
             "Thread %s: Completed one invariant. Remaining: %d.%n",
             Thread.currentThread().getName(), remaining);
       }
     }
-    if (isThread0) {
-      System.out.printf("Thread %s: Stopping worker thread.%n",
-          Thread.currentThread().getName());
-    } else if (completedInvariants.get() >= totalInvariants) {
-      System.out.printf("Thread %s: Stopping as all invariants are complete.%n",
-          Thread.currentThread().getName());
-    } else {
-      System.out.printf(
-          "Thread %s: Stopping (no invariant permit available).%n",
-          Thread.currentThread().getName());
-    }
+
+    System.out.printf(
+        "Thread %s: Stopping.%n",
+        Thread.currentThread().getName());
   }
 }
