@@ -27,11 +27,11 @@ public class Monitor implements MonitorInterface {
    *
    * @param rdp La red de Petri que será controlada por el monitor.
    */
-  Monitor(RdP rdp, boolean timed) {
+  Monitor(RdP rdp, boolean timed, Mode mode) {
     entry = new Semaphore(1, true);
     this.rdp = rdp;
     Queues = new Queues();
-    policy = new Policy(Mode.PRIORITY);
+    policy = new Policy(mode);
     successfullyFired = new CopyOnWriteArrayList<>();
     time = new TimeRestrictions();
 
