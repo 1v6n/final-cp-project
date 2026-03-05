@@ -42,8 +42,6 @@ public class Monitor implements MonitorInterface {
   private final LogService log;
   private int forcedAgentTransition = -1;
   private int forcedReservationTransition = -1;
-  private volatile boolean systemRunning = true;
-
   private final List<Invariants.PInvariant> pInvariants = Invariants.defaultPInvariants();
 
   /**
@@ -58,12 +56,12 @@ public class Monitor implements MonitorInterface {
    * @param rdp   red de Petri controlada por el monitor.
    * @param timed indica si se habilitan restricciones temporales.
    */
-  Monitor(RdP rdp, boolean timed, LogService log) {
+  Monitor(RdP rdp, boolean timed, LogService log, PolicyMode mode) {
     entry = new Semaphore(1, true);
     this.rdp = rdp;
     this.log = log;
     Queues = new Queues();
-    policy = new Policy(PolicyMode.PRIORITIZED);
+    policy = new Policy(mode);
     successfullyFired = new CopyOnWriteArrayList<>();
     time = new TimeRestrictions();
 
@@ -161,21 +159,19 @@ public class Monitor implements MonitorInterface {
     switch (evaluation) {
 
       case ALLOWED:
-
         // ==============================
         // CONFLICTO AGENTES (T2 vs T3)
         // ==============================
-        if ((transition == 2 || transition == 3) &&
-            isTransitionAllowed(2) &&
-            isTransitionAllowed(3)) {
+        if (transition == 2 || transition == 3) {
 
           if (forcedAgentTransition == -1) {
             forcedAgentTransition = policy.chooseTransition(List.of(2, 3));
           }
 
           if (transition != forcedAgentTransition) {
-            waitForSensitization(transition);
-            return TransitionStep.RETRY_MONITOR_RELEASED;
+            // waitForSensitization(transition);
+            // return TransitionStep.RETRY_MONITOR_RELEASED;
+            return TransitionStep.RETRY_MONITOR_HELD;
           }
 
           // Soy el elegido
@@ -186,24 +182,21 @@ public class Monitor implements MonitorInterface {
         // =================================
         // CONFLICTO RESERVAS (T6 vs T7)
         // =================================
-        else if ((transition == 6 || transition == 7) &&
-            isTransitionAllowed(6) &&
-            isTransitionAllowed(7)) {
+        else if (transition == 6 || transition == 7) {
 
           if (forcedReservationTransition == -1) {
             forcedReservationTransition = policy.chooseTransition(List.of(6, 7));
           }
 
           if (transition != forcedReservationTransition) {
-            waitForSensitization(transition);
-            return TransitionStep.RETRY_MONITOR_RELEASED;
+            // waitForSensitization(transition);
+            // return TransitionStep.RETRY_MONITOR_RELEASED;
+            return TransitionStep.RETRY_MONITOR_HELD;
           }
 
           // Soy el elegido
           policy.recordConflictDecision(forcedReservationTransition);
           forcedReservationTransition = -1;
-        } else {
-
         }
         // ======================
         // DISPARO NORMAL
@@ -217,7 +210,6 @@ public class Monitor implements MonitorInterface {
         return TransitionStep.RETRY_MONITOR_RELEASED;
 
       case EXPIRED:
-
         waitForFreshEnableInstance(transition);
         return TransitionStep.RETRY_MONITOR_RELEASED;
 
@@ -484,23 +476,16 @@ public class Monitor implements MonitorInterface {
    * laterales devuelve {@code ALLOWED}.
    */
   private void updateSensitizedAndRelease() {
+
     DMatrixRMaj sensitized = rdp.getSensitized();
-    DMatrixRMaj WaitingCounts = Queues.getWaitingCounts();
-    DMatrixRMaj result = new DMatrixRMaj(sensitized.numRows, sensitized.numCols);
-    CommonOps_DDRM.elementMult(sensitized, WaitingCounts, result);
-    List<Integer> availableTransitions = new ArrayList<>();
+    DMatrixRMaj waiting = Queues.getWaitingCounts();
 
-    for (int i = 0; i < result.numCols; i++) {
-      if (result.get(0, i) >= 1 &&
-          time.evaluateFireNoSideEffects(i) == TimeRestrictions.FireEvaluation.ALLOWED) {
-        availableTransitions.add(i);
-      }
-    }
+    for (int i = 0; i < sensitized.numCols; i++) {
 
-    if (!availableTransitions.isEmpty()) {
-      for (int transitionToRelease : availableTransitions) {
-        Queues.decrementWaitingCount(transitionToRelease);
-        Queues.getSemaphoreForTransition(transitionToRelease).release();
+      if (sensitized.get(0, i) == 1 && waiting.get(0, i) > 0) {
+
+        Queues.decrementWaitingCount(i);
+        Queues.getSemaphoreForTransition(i).release();
       }
     }
   }
