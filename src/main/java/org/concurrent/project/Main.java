@@ -7,6 +7,8 @@ import java.util.Vector;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.concurrent.project.Policy.PolicyMode;
+
 /**
  * Punto de entrada de la simulación concurrente de la red de Petri.
  *
@@ -16,7 +18,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class Main {
   private static final int TOTAL_RUNS = 186;
-  private static final boolean timed = true;
+  private static final boolean timed = false;
 
   /**
    * Ejecuta la simulación.
@@ -30,7 +32,7 @@ public class Main {
     try (LogService logService = new LogService(logPath)) {
 
       RdP rdP = new RdP();
-      Monitor monitor = new Monitor(rdP, timed, logService);
+      Monitor monitor = new Monitor(rdP, timed, logService, PolicyMode.PRIORITIZED);
 
       long startTime = System.currentTimeMillis();
 
@@ -87,7 +89,7 @@ public class Main {
       // ----------- Wait for completion -----------
       try {
         while (completedInvariants.get() < TOTAL_RUNS) {
-          Thread.sleep(10);
+          Thread.sleep(5);
         }
 
         // Interrumpimos TODOS los hilos
