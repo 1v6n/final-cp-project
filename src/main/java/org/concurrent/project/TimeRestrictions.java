@@ -12,16 +12,16 @@ import java.util.function.LongSupplier;
 /**
  * Gestiona restricciones temporales de disparo para transiciones de la RdP.
  *
- * <p>Implementa evaluación en semántica débil sobre ventanas [alpha, beta]
- * por instancia de habilitación, incluyendo detección de expiración, cálculo
- * de tiempo restante a ETF y versionado de habilitación.
+ * <p>Implementa evaluación en semántica débil sobre ETF (alpha) por instancia
+ * de habilitación, con LTF infinito en ejecución. El valor beta configurado se
+ * conserva como metadato para compatibilidad, sin intervenir en la evaluación
+ * de disparo actual.
  */
 public class TimeRestrictions {
     /** Resultado de evaluación temporal para un intento de disparo. */
     public enum FireEvaluation {
         ALLOWED,
         TOO_EARLY,
-        EXPIRED,
         NOT_ENABLED
     }
 
@@ -41,13 +41,11 @@ public class TimeRestrictions {
     private static class RuntimeState {
         private boolean sensitized;
         private long enabledAtNs;
-        private boolean expired;
         private long enableSequence;
 
         private RuntimeState() {
             this.sensitized = false;
             this.enabledAtNs = 0L;
-            this.expired = false;
             this.enableSequence = 0L;
         }
     }
@@ -92,7 +90,8 @@ public class TimeRestrictions {
      *
      * @param transition número de transición
      * @param alphaMs ETF relativo al instante de sensibilización
-     * @param betaMs LTF relativo al instante de sensibilización (Long.MAX_VALUE para infinito)
+     * @param betaMs LTF relativo al instante de sensibilización (Long.MAX_VALUE para infinito).
+     *               Se conserva como metadato de configuración.
      */
     public void setTimedTransition(int transition, long alphaMs, long betaMs) {
         if (alphaMs < 0) {
@@ -133,13 +132,11 @@ public class TimeRestrictions {
         if (isSensitized && !state.sensitized) {
             state.sensitized = true;
             state.enabledAtNs = clockNs.getAsLong();
-            state.expired = false;
             state.enableSequence++;
             return true;
         }
         if (!isSensitized && state.sensitized) {
             state.sensitized = false;
-            state.expired = false;
         }
         return false;
     }
@@ -169,20 +166,6 @@ public class TimeRestrictions {
      * @return resultado de evaluación temporal para el disparo.
      */
     public FireEvaluation evaluateFire(int transition) {
-        return evaluateFire(transition, true);
-    }
-
-    /**
-     * Evalúa una transición sin mutar el estado temporal (no marca expiración).
-     *
-     * @param transition número de transición.
-     * @return resultado de evaluación temporal para decisiones de selección/liberación.
-     */
-    public FireEvaluation evaluateFireNoSideEffects(int transition) {
-        return evaluateFire(transition, false);
-    }
-
-    private FireEvaluation evaluateFire(int transition, boolean mutateState) {
         if (!isTimedTransition(transition)) {
             return FireEvaluation.ALLOWED;
         }
@@ -190,22 +173,23 @@ public class TimeRestrictions {
         if (!state.sensitized) {
             return FireEvaluation.NOT_ENABLED;
         }
-        if (state.expired) {
-            return FireEvaluation.EXPIRED;
-        }
 
         TimingConfig config = timedTransitions.get(transition);
         long elapsed = clockNs.getAsLong() - state.enabledAtNs;
         if (elapsed + TIMING_TOLERANCE_NS < config.alphaNs) {
             return FireEvaluation.TOO_EARLY;
         }
-        if (config.betaNs != INFINITE_BETA && elapsed > config.betaNs + TIMING_TOLERANCE_NS) {
-            if (mutateState) {
-                state.expired = true;
-            }
-            return FireEvaluation.EXPIRED;
-        }
         return FireEvaluation.ALLOWED;
+    }
+
+    /**
+     * Evalúa una transición sin mutar el estado temporal.
+     *
+     * @param transition número de transición.
+     * @return resultado de evaluación temporal para decisiones de selección/liberación.
+     */
+    public FireEvaluation evaluateFireNoSideEffects(int transition) {
+        return evaluateFire(transition);
     }
 
     /**
@@ -219,7 +203,7 @@ public class TimeRestrictions {
             return 0L;
         }
         RuntimeState state = runtimeStates.get(transition);
-        if (!state.sensitized || state.expired) {
+        if (!state.sensitized) {
             return 0L;
         }
         TimingConfig config = timedTransitions.get(transition);
@@ -245,12 +229,10 @@ public class TimeRestrictions {
         RuntimeState state = runtimeStates.get(transition);
         if (isStillSensitized) {
             state.enabledAtNs = clockNs.getAsLong();
-            state.expired = false;
             state.sensitized = true;
             state.enableSequence++;
         } else {
             state.sensitized = false;
-            state.expired = false;
         }
     }
 
