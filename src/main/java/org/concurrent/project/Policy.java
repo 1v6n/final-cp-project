@@ -68,7 +68,7 @@ public class Policy {
     this.agentCycle = 0;
   }
 
-  public synchronized PolicyDecision evaluate(int transition, List<Integer> currentlyEnabled) {
+  public PolicyDecision evaluate(int transition, List<Integer> currentlyEnabled) {
     ConflictGroup group = groupForTransition(transition);
     if (group == ConflictGroup.NONE) {
       return PolicyDecision.allow(transition);
