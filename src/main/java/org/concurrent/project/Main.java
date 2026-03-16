@@ -18,7 +18,7 @@ import org.concurrent.project.Policy.PolicyMode;
  */
 public class Main {
   private static final int TOTAL_RUNS = 186;
-  private static final boolean timed = false;
+  private static final boolean timed = true;
 
   /**
    * Ejecuta la simulación.
