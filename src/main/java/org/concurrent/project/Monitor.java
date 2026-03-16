@@ -1,14 +1,13 @@
 package org.concurrent.project;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Semaphore;
 
+import org.concurrent.project.Policy.PolicyDecision;
 import org.concurrent.project.Policy.PolicyMode;
 import org.concurrent.project.TimeRestrictions.FireEvaluation;
 import org.ejml.data.DMatrixRMaj;
-import org.ejml.dense.row.CommonOps_DDRM;
 
 /**
  * Coordina el disparo concurrente de transiciones de la RdP mediante exclusión
@@ -40,8 +39,6 @@ public class Monitor implements MonitorInterface {
   private final CopyOnWriteArrayList<String> successfullyFired;
   private final TimeRestrictions time;
   private final LogService log;
-  private int forcedAgentTransition = -1;
-  private int forcedReservationTransition = -1;
   private final List<Invariants.PInvariant> pInvariants = Invariants.defaultPInvariants();
 
   /**
@@ -159,50 +156,13 @@ public class Monitor implements MonitorInterface {
     switch (evaluation) {
 
       case ALLOWED:
-        // ==============================
-        // CONFLICTO AGENTES (T2 vs T3)
-        // ==============================
-        if (transition == 2 || transition == 3) {
-
-          if (forcedAgentTransition == -1) {
-            forcedAgentTransition = policy.chooseTransition(List.of(2, 3));
-          }
-
-          if (transition != forcedAgentTransition) {
-            // waitForSensitization(transition);
-            // return TransitionStep.RETRY_MONITOR_RELEASED;
-            return TransitionStep.RETRY_MONITOR_HELD;
-          }
-
-          // Soy el elegido
-          policy.recordConflictDecision(forcedAgentTransition);
-          forcedAgentTransition = -1;
+        PolicyDecision policyDecision = policy.evaluate(transition, getPolicyEligibleTransitions());
+        if (!policyDecision.shouldFire()) {
+          return TransitionStep.RETRY_MONITOR_HELD;
         }
 
-        // =================================
-        // CONFLICTO RESERVAS (T6 vs T7)
-        // =================================
-        else if (transition == 6 || transition == 7) {
-
-          if (forcedReservationTransition == -1) {
-            forcedReservationTransition = policy.chooseTransition(List.of(6, 7));
-          }
-
-          if (transition != forcedReservationTransition) {
-            // waitForSensitization(transition);
-            // return TransitionStep.RETRY_MONITOR_RELEASED;
-            return TransitionStep.RETRY_MONITOR_HELD;
-          }
-
-          // Soy el elegido
-          policy.recordConflictDecision(forcedReservationTransition);
-          forcedReservationTransition = -1;
-        }
-        // ======================
-        // DISPARO NORMAL
-        // ======================
         fireAndReleaseTransition(transition);
-        policy.recordFire(transition);
+        policy.onTransitionFired(transition);
         return TransitionStep.FIRED;
 
       case TOO_EARLY:
@@ -490,13 +450,24 @@ public class Monitor implements MonitorInterface {
     }
   }
 
-  public Policy getPolicy() {
-    return policy;
+  public void printPolicySummary() {
+    policy.printSummary();
   }
 
   private boolean isTransitionAllowed(int t) {
     return rdp.getSensitized().get(0, t) == 1 &&
         time.evaluateFireNoSideEffects(t) == FireEvaluation.ALLOWED;
+  }
+
+  private List<Integer> getPolicyEligibleTransitions() {
+    List<Integer> enabled = new java.util.ArrayList<>();
+    int totalTransitions = rdp.getIncidencia().numCols;
+    for (int t = 0; t < totalTransitions; t++) {
+      if (isTransitionAllowed(t)) {
+        enabled.add(t);
+      }
+    }
+    return enabled;
   }
 
 }

@@ -116,7 +116,7 @@ public class Main {
 
       System.out.println("Total invariants runned:" + completedInvariants.get());
 
-      monitor.getPolicy().printSummary();
+      monitor.printPolicySummary();
 
     } catch (IOException e) {
       e.printStackTrace();
