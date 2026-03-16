@@ -391,7 +391,7 @@ public class Monitor implements MonitorInterface {
    */
   private void releaseWaitersOnFreshEnable(List<Integer> newlyEnabledTransitions) {
     for (int transition : newlyEnabledTransitions) {
-      while (Queues.getWaitingCounts().get(0, transition) >= 1) {
+      if (Queues.getWaitingCounts().get(0, transition) >= 1) {
         Queues.decrementWaitingCount(transition);
         Queues.getSemaphoreForTransition(transition).release();
       }
