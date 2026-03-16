@@ -4,7 +4,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Vector;
-import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.concurrent.project.Policy.PolicyMode;
@@ -43,21 +43,18 @@ public class Main {
           { 1, 3, 4, 7, 8, 11 }
       };
 
-      Semaphore invariantPermits = new Semaphore(TOTAL_RUNS, true);
-      Semaphore t0Permits = new Semaphore(TOTAL_RUNS, true);
       AtomicInteger completedInvariants = new AtomicInteger(0);
+      AtomicBoolean running = new AtomicBoolean(true);
 
       // ----------- Thread 0 -----------
       Vector<Integer> pathForThread0 = new Vector<>();
       pathForThread0.add(0);
 
       Thread thread0 = new Thread(
-          new Threads(pathForThread0, rdP, monitor,
-              invariantPermits, t0Permits,
+          new Threads(pathForThread0, monitor,
               completedInvariants,
               TOTAL_RUNS,
-              true,
-              logService),
+              true, running),
           "Thread-0");
 
       // ----------- Invariant Threads -----------
@@ -71,12 +68,10 @@ public class Main {
         }
 
         invariantThreads[i] = new Thread(
-            new Threads(path, rdP, monitor,
-                invariantPermits, t0Permits,
+            new Threads(path, monitor,
                 completedInvariants,
                 TOTAL_RUNS,
-                false,
-                logService),
+                false, running),
             "Invariant-Thread-" + (i + 1));
       }
 
@@ -88,11 +83,13 @@ public class Main {
 
       // ----------- Wait for completion -----------
       try {
-        while (completedInvariants.get() < TOTAL_RUNS) {
+        while (running.get() && completedInvariants.get() < TOTAL_RUNS) {
           Thread.sleep(5);
         }
 
-        // Interrumpimos TODOS los hilos
+        running.set(false);
+
+        // Interrumpimos TODOS los hilos solo para desbloquear esperas
         thread0.interrupt();
         for (Thread t : invariantThreads) {
           t.interrupt();
@@ -105,6 +102,11 @@ public class Main {
         }
 
       } catch (InterruptedException e) {
+        running.set(false);
+        thread0.interrupt();
+        for (Thread t : invariantThreads) {
+          t.interrupt();
+        }
         Thread.currentThread().interrupt();
       }
 

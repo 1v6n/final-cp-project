@@ -1,7 +1,7 @@
 package org.concurrent.project;
 
 import java.util.Vector;
-import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -9,48 +9,36 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * <p>
  * Puede operar como hilo habilitador (T0) o como hilo de invariante.
- * En modo invariante, cada hilo reserva una ejecución completa mediante
- * permisos antes de intentar disparar su secuencia.
  */
 public class Threads implements Runnable {
   private final Vector<Integer> path;
   private final int totalInvariants;
   private final MonitorInterface monitor;
-  private final Semaphore invariantPermits;
-  private final Semaphore t0Permits;
   private final AtomicInteger completedInvariants;
   private final boolean isThread0;
-  private final LogService log;
+  private final AtomicBoolean running;
 
   /**
    * Construye un worker de ejecución de transiciones.
    *
    * @param path                secuencia de transiciones a ejecutar por este
    *                            hilo.
-   * @param rdp                 red de Petri asociada (no utilizada directamente
-   *                            en esta versión).
    * @param monitor             monitor usado para disparar transiciones.
-   * @param invariantPermits    semáforo que limita invariantes completos a
-   *                            ejecutar.
-   * @param t0Permits           semáforo que limita disparos de T0.
    * @param completedInvariants contador global de invariantes completados.
    * @param totalInvariants     objetivo total de invariantes.
    * @param isThread0           {@code true} si el hilo actúa como habilitador
    *                            principal.
    */
-  public Threads(Vector<Integer> path, RdP rdp,
-      MonitorInterface monitor, Semaphore invariantPermits,
-      Semaphore t0Permits,
+  public Threads(Vector<Integer> path,
+      MonitorInterface monitor,
       AtomicInteger completedInvariants, int totalInvariants,
-      boolean isThread0, LogService log) {
+      boolean isThread0, AtomicBoolean running) {
     this.path = path;
     this.totalInvariants = totalInvariants;
     this.monitor = monitor;
-    this.invariantPermits = invariantPermits;
-    this.t0Permits = t0Permits;
     this.completedInvariants = completedInvariants;
     this.isThread0 = isThread0;
-    this.log = log;
+    this.running = running;
   }
 
   /**
@@ -58,8 +46,8 @@ public class Threads implements Runnable {
    *
    * <p>
    * Si es hilo habilitador, intenta disparar continuamente su transición de
-   * entrada hasta alcanzar el objetivo global o ser interrumpido. Si es hilo de
-   * invariante, reserva un permiso y ejecuta su secuencia completa.
+   * entrada hasta alcanzar el objetivo global o ser detenido. Si es hilo de
+   * invariante, ejecuta su secuencia completa.
    */
   @Override
   public void run() {
@@ -68,39 +56,61 @@ public class Threads implements Runnable {
 
       int transition = path.get(0);
 
-      while (!Thread.currentThread().isInterrupted()) {
+      while (running.get()) {
 
-        if (completedInvariants.get() >= totalInvariants)
+        if (completedInvariants.get() >= totalInvariants) {
+          running.set(false);
           break;
+        }
 
         boolean fired = monitor.fireTransition(transition);
 
-        if (!fired) {
-          if (completedInvariants.get() >= totalInvariants ||
-              Thread.currentThread().isInterrupted()) {
-            break;
-          }
+        if (!fired && !running.get()) {
+          break;
         }
       }
 
     } else {
 
-      while (!Thread.currentThread().isInterrupted()) {
+      while (running.get()) {
 
         // Chequeo global antes de empezar
         int current = completedInvariants.get();
-        if (current >= totalInvariants)
+        if (current >= totalInvariants) {
+          running.set(false);
           break;
+        }
 
         // Ejecutar secuencia completa
+        boolean sequenceCompleted = true;
         for (int transition : path) {
 
-          if (completedInvariants.get() >= totalInvariants)
-            return;
+          if (!running.get()) {
+            sequenceCompleted = false;
+            break;
+          }
+
+          if (completedInvariants.get() >= totalInvariants) {
+            running.set(false);
+            sequenceCompleted = false;
+            break;
+          }
 
           if (!monitor.fireTransition(transition)) {
-            return;
+            if (!running.get()) {
+              sequenceCompleted = false;
+              break;
+            }
+            sequenceCompleted = false;
+            break;
           }
+        }
+
+        if (!running.get()) {
+          break;
+        }
+        if (!sequenceCompleted) {
+          continue;
         }
 
         // Reclamar slot global de manera atómica
@@ -109,7 +119,11 @@ public class Threads implements Runnable {
         if (completed > totalInvariants) {
           // Evita overshoot
           completedInvariants.decrementAndGet();
+          running.set(false);
           break;
+        }
+        if (completed >= totalInvariants) {
+          running.set(false);
         }
 
         int remaining = totalInvariants - completed;
