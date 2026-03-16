@@ -21,7 +21,7 @@ import org.ejml.data.DMatrixRMaj;
  */
 public class Monitor implements MonitorInterface {
   /** Margen práctico para LTF en ejecución sobre JVM. */
-  private static final long BETA_SLACK_MS = 50L;
+  private static final long BETA_SLACK_MS = Long.MAX_VALUE;
   /** Configuración base de transiciones temporizadas: {transition, alphaMs}. */
   private static final int[][] TIMED_TRANSITIONS_BASE_MS = {
       { 1, 130 }, { 4, 70 }, { 5, 70 }, { 8, 100 }, { 9, 50 }, { 10, 50 } };
@@ -82,10 +82,24 @@ public class Monitor implements MonitorInterface {
     for (int[] transitionConfig : TIMED_TRANSITIONS_BASE_MS) {
       int transition = transitionConfig[0];
       long alphaMs = transitionConfig[1];
-      long betaMs = alphaMs + BETA_SLACK_MS;
+      long betaMs = computeBetaMs(alphaMs);
       time.setTimedTransition(transition, alphaMs, betaMs);
     }
     time.updateFromSensitized(rdp.getSensitized());
+  }
+
+  /**
+   * Calcula beta en milisegundos evitando overflow y permitiendo LTF infinito.
+   */
+  private long computeBetaMs(long alphaMs) {
+    if (BETA_SLACK_MS == Long.MAX_VALUE) {
+      return Long.MAX_VALUE;
+    }
+    long beta = alphaMs + BETA_SLACK_MS;
+    if (beta < alphaMs) {
+      return Long.MAX_VALUE;
+    }
+    return beta;
   }
 
   /**
