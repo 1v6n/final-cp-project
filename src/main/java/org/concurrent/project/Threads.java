@@ -1,6 +1,6 @@
 package org.concurrent.project;
 
-import java.util.Vector;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Puede operar como hilo habilitador (T0) o como hilo de invariante.
  */
 public class Threads implements Runnable {
-  private final Vector<Integer> path;
+  private final List<Integer> path;
   private final int totalInvariants;
   private final MonitorInterface monitor;
   private final AtomicInteger completedInvariants;
@@ -29,7 +29,7 @@ public class Threads implements Runnable {
    * @param isThread0           {@code true} si el hilo actúa como habilitador
    *                            principal.
    */
-  public Threads(Vector<Integer> path,
+  public Threads(List<Integer> path,
       MonitorInterface monitor,
       AtomicInteger completedInvariants, int totalInvariants,
       boolean isThread0, AtomicBoolean running) {
