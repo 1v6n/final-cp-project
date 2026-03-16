@@ -13,9 +13,7 @@ import java.util.function.LongSupplier;
  * Gestiona restricciones temporales de disparo para transiciones de la RdP.
  *
  * <p>Implementa evaluación en semántica débil sobre ETF (alpha) por instancia
- * de habilitación, con LTF infinito en ejecución. El valor beta configurado se
- * conserva como metadato para compatibilidad, sin intervenir en la evaluación
- * de disparo actual.
+ * de habilitación, con LTF infinito (sin expiración).
  */
 public class TimeRestrictions {
     /** Resultado de evaluación temporal para un intento de disparo. */
@@ -25,7 +23,7 @@ public class TimeRestrictions {
         NOT_ENABLED
     }
 
-    private static final long INFINITE_BETA = Long.MAX_VALUE;
+    public static final long INFINITE_BETA = Long.MAX_VALUE;
     private static final long TIMING_TOLERANCE_NS = TimeUnit.MILLISECONDS.toNanos(2);
 
     private static class TimingConfig {
@@ -41,12 +39,10 @@ public class TimeRestrictions {
     private static class RuntimeState {
         private boolean sensitized;
         private long enabledAtNs;
-        private long enableSequence;
 
         private RuntimeState() {
             this.sensitized = false;
             this.enabledAtNs = 0L;
-            this.enableSequence = 0L;
         }
     }
 
@@ -76,33 +72,34 @@ public class TimeRestrictions {
     }
 
     /**
-     * Configura una transición temporizada en modo delay [d, d] en semántica débil.
+     * Configura una transición temporizada con ETF (alpha) y beta infinito.
      *
-     * @param transition número de transición
-     * @param delayMs intervalo puntual en milisegundos
+     * @param transition número de transición.
+     * @param alphaMs ETF relativo al instante de sensibilización.
      */
-    public void setTimedTransition(int transition, long delayMs) {
-        setTimedTransition(transition, delayMs, delayMs);
+    public void setTimedTransition(int transition, long alphaMs) {
+        setTimedTransition(transition, alphaMs, INFINITE_BETA);
     }
 
     /**
-     * Configura una transición temporizada con intervalo [alpha, beta].
+     * Configura una transición temporizada con ETF (alpha) y LTF (beta).
      *
-     * @param transition número de transición
-     * @param alphaMs ETF relativo al instante de sensibilización
-     * @param betaMs LTF relativo al instante de sensibilización (Long.MAX_VALUE para infinito).
-     *               Se conserva como metadato de configuración.
+     * <p>En el modelo actual, beta debe ser infinito y se conserva solo como
+     * metadato de configuración.
+     *
+     * @param transition número de transición.
+     * @param alphaMs ETF relativo al instante de sensibilización.
+     * @param betaMs LTF relativo al instante de sensibilización.
      */
     public void setTimedTransition(int transition, long alphaMs, long betaMs) {
         if (alphaMs < 0) {
             throw new IllegalArgumentException("alphaMs debe ser >= 0");
         }
-        if (betaMs != INFINITE_BETA && betaMs < alphaMs) {
-            throw new IllegalArgumentException("betaMs debe ser >= alphaMs o infinito");
+        if (betaMs != INFINITE_BETA) {
+            throw new IllegalArgumentException("betaMs debe ser infinito (Long.MAX_VALUE) en este modelo");
         }
         long alphaNs = TimeUnit.MILLISECONDS.toNanos(alphaMs);
-        long betaNs = (betaMs == INFINITE_BETA) ? INFINITE_BETA : TimeUnit.MILLISECONDS.toNanos(betaMs);
-        timedTransitions.put(transition, new TimingConfig(alphaNs, betaNs));
+        timedTransitions.put(transition, new TimingConfig(alphaNs, betaMs));
         runtimeStates.put(transition, new RuntimeState());
     }
 
@@ -132,7 +129,6 @@ public class TimeRestrictions {
         if (isSensitized && !state.sensitized) {
             state.sensitized = true;
             state.enabledAtNs = clockNs.getAsLong();
-            state.enableSequence++;
             return true;
         }
         if (!isSensitized && state.sensitized) {
@@ -183,16 +179,6 @@ public class TimeRestrictions {
     }
 
     /**
-     * Evalúa una transición sin mutar el estado temporal.
-     *
-     * @param transition número de transición.
-     * @return resultado de evaluación temporal para decisiones de selección/liberación.
-     */
-    public FireEvaluation evaluateFireNoSideEffects(int transition) {
-        return evaluateFire(transition);
-    }
-
-    /**
      * Tiempo restante para alcanzar ETF.
      *
      * @param transition número de transición.
@@ -230,26 +216,8 @@ public class TimeRestrictions {
         if (isStillSensitized) {
             state.enabledAtNs = clockNs.getAsLong();
             state.sensitized = true;
-            state.enableSequence++;
         } else {
             state.sensitized = false;
         }
     }
-
-    /**
-     * Devuelve la versión de la instancia de habilitación de una transición temporizada.
-     *
-     * <p>La versión se incrementa cada vez que se crea una nueva instancia habilitada
-     * (por ejemplo, en el flanco no-sensibilizada -> sensibilizada).
-     *
-     * @param transition número de transición.
-     * @return versión actual de habilitación, o {@code -1} si la transición no es temporizada.
-     */
-    public long getEnableSequence(int transition) {
-        if (!isTimedTransition(transition)) {
-            return -1L;
-        }
-        return runtimeStates.get(transition).enableSequence;
-    }
-
 }

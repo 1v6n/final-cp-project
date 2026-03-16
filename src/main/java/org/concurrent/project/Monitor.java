@@ -20,8 +20,7 @@ import org.ejml.data.DMatrixRMaj;
  * cuando una transición vuelve a estar habilitada para disparo.
  */
 public class Monitor implements MonitorInterface {
-  /** Margen práctico para LTF en ejecución sobre JVM. */
-  private static final long BETA_SLACK_MS = Long.MAX_VALUE;
+  private static final long INFINITE_BETA_MS = TimeRestrictions.INFINITE_BETA;
   /** Configuración base de transiciones temporizadas: {transition, alphaMs}. */
   private static final int[][] TIMED_TRANSITIONS_BASE_MS = {
       { 1, 130 }, { 4, 70 }, { 5, 70 }, { 8, 100 }, { 9, 50 }, { 10, 50 } };
@@ -69,8 +68,8 @@ public class Monitor implements MonitorInterface {
    * Aplica configuración temporal inicial en forma declarativa.
    *
    * <p>
-   * Si el modo temporizado está activo, registra cada transición con ventana
-   * finita [alpha, alpha + slack] y sincroniza estado temporal inicial con la
+   * Si el modo temporizado está activo, registra cada transición con ETF
+   * (alpha) y beta infinito, y sincroniza estado temporal inicial con la
    * sensibilización actual de la red.
    *
    * @param timed indica si deben activarse restricciones temporales.
@@ -82,24 +81,9 @@ public class Monitor implements MonitorInterface {
     for (int[] transitionConfig : TIMED_TRANSITIONS_BASE_MS) {
       int transition = transitionConfig[0];
       long alphaMs = transitionConfig[1];
-      long betaMs = computeBetaMs(alphaMs);
-      time.setTimedTransition(transition, alphaMs, betaMs);
+      time.setTimedTransition(transition, alphaMs, INFINITE_BETA_MS);
     }
     time.updateFromSensitized(rdp.getSensitized());
-  }
-
-  /**
-   * Calcula beta en milisegundos evitando overflow y permitiendo LTF infinito.
-   */
-  private long computeBetaMs(long alphaMs) {
-    if (BETA_SLACK_MS == Long.MAX_VALUE) {
-      return Long.MAX_VALUE;
-    }
-    long beta = alphaMs + BETA_SLACK_MS;
-    if (beta < alphaMs) {
-      return Long.MAX_VALUE;
-    }
-    return beta;
   }
 
   /**
@@ -367,8 +351,8 @@ public class Monitor implements MonitorInterface {
    *
    * <p>
    * Calcula intersección entre transición sensibilizada y cantidad de hilos
-   * esperando. Solo libera semáforos cuando la evaluación temporal sin efectos
-   * laterales devuelve {@code ALLOWED}.
+   * esperando. Solo libera semáforos cuando la evaluación temporal devuelve
+   * {@code ALLOWED}.
    */
   private void updateSensitizedAndRelease() {
 
@@ -391,7 +375,7 @@ public class Monitor implements MonitorInterface {
 
   private boolean isTransitionAllowed(int t) {
     return rdp.getSensitized().get(0, t) == 1 &&
-        time.evaluateFireNoSideEffects(t) == FireEvaluation.ALLOWED;
+        time.evaluateFire(t) == FireEvaluation.ALLOWED;
   }
 
   private List<Integer> getPolicyEligibleTransitions() {
