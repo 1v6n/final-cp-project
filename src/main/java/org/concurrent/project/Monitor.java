@@ -110,7 +110,7 @@ public class Monitor implements MonitorInterface {
    * Valida índice, toma el monitor, refresca estado de sensibilización temporal
    * y evalúa si el disparo está permitido. Si la transición no puede dispararse
    * en
-   * este ciclo (no sensibilizada, temprana o vencida), libera monitor y espera
+   * este ciclo (no sensibilizada o temprana), libera monitor y espera
    * el evento correspondiente antes de reintentar.
    *
    * @param transition identificador de transición a disparar.
@@ -183,10 +183,6 @@ public class Monitor implements MonitorInterface {
         waitUntilEarliestFireTime(transition);
         return TransitionStep.RETRY_MONITOR_RELEASED;
 
-      case EXPIRED:
-        waitForFreshEnableInstance(transition);
-        return TransitionStep.RETRY_MONITOR_RELEASED;
-
       case NOT_ENABLED:
         throw new IllegalStateException(
             "Estado inconsistente: transición sensibilizada en RdP pero "
@@ -201,8 +197,8 @@ public class Monitor implements MonitorInterface {
    * Espera hasta alcanzar ETF para una transición temporizada.
    *
    * <p>
-   * Libera el monitor antes de esperar y usa verificación de versión para
-   * cancelar la espera si cambia la instancia de habilitación.
+   * Libera el monitor antes de esperar y duerme una única vez por el
+   * tiempo restante hacia ETF.
    *
    * @param transition transición en estado {@code TOO_EARLY}.
    * @throws InterruptedException si el hilo es interrumpido durante la espera.
@@ -213,37 +209,9 @@ public class Monitor implements MonitorInterface {
         "T" + transition +
             " no puede ser disparada por restricción de tiempo. Esperando...");
     long remainingMs = time.getRemainingToEarliest(transition);
-    long observedSequence = time.getEnableSequence(transition);
     releaseMonitor();
-    sleepWithVersionCheck(remainingMs, transition, observedSequence);
-  }
-
-  /**
-   * Espera una nueva instancia de habilitación para una transición expirada.
-   *
-   * <p>
-   * La espera se mantiene mientras la versión de habilitación permanezca igual
-   * a la instancia vencida.
-   *
-   * @param transition transición en estado {@code EXPIRED}.
-   * @throws InterruptedException si el hilo es interrumpido durante la espera.
-   */
-  private void waitForFreshEnableInstance(int transition)
-      throws InterruptedException {
-    System.out.println(
-        "T" + transition +
-            " vencida para esta instancia. Esperando nueva habilitación.");
-    long expiredSequence = time.getEnableSequence(transition);
-    Queues.incrementWaitingCount(transition);
-    releaseMonitor();
-    while (true) {
-      if (time.getEnableSequence(transition) != expiredSequence) {
-        return;
-      }
-      Queues.getSemaphoreForTransition(transition).acquire();
-      if (time.getEnableSequence(transition) != expiredSequence) {
-        return;
-      }
+    if (remainingMs > 0) {
+      Thread.sleep(remainingMs);
     }
   }
 
@@ -266,33 +234,6 @@ public class Monitor implements MonitorInterface {
     Queues.incrementWaitingCount(transition);
     releaseMonitor();
     Queues.getSemaphoreForTransition(transition).acquire();
-  }
-
-  /**
-   * Duerme en intervalos cortos validando cambios de versión de habilitación.
-   *
-   * <p>
-   * Evita esperas monolíticas largas para mejorar capacidad de respuesta ante
-   * cambios de estado. Si cambia la versión observada, retorna antes del tiempo
-   * objetivo para re-evaluar el disparo.
-   *
-   * @param totalSleepMs     tiempo total de espera deseado en milisegundos.
-   * @param transition       transición observada durante la espera.
-   * @param observedSequence versión de habilitación esperada.
-   * @throws InterruptedException si el hilo es interrumpido durante el sueño.
-   */
-  private void sleepWithVersionCheck(long totalSleepMs, int transition,
-      long observedSequence)
-      throws InterruptedException {
-    long remaining = Math.max(totalSleepMs, 0L);
-    while (remaining > 0) {
-      if (time.getEnableSequence(transition) != observedSequence) {
-        return;
-      }
-      long step = remaining;
-      Thread.sleep(step);
-      remaining -= step;
-    }
   }
 
   /**
@@ -348,10 +289,9 @@ public class Monitor implements MonitorInterface {
   private void fireAndReleaseTransition(int transition) {
     DMatrixRMaj firingVector = createFiringVector(transition);
     rdp.fireTransition(firingVector, transition);
-    List<Integer> newlyEnabledTransitions = time.updateFromSensitized(rdp.getSensitized());
+    time.updateFromSensitized(rdp.getSensitized());
     time.onTransitionFired(transition,
         rdp.getSensitized().get(0, transition) == 1);
-    releaseWaitersOnFreshEnable(newlyEnabledTransitions);
     updateSensitizedAndRelease();
     successfullyFired.add("T" + transition);
     printSuccessfullyFired();
@@ -391,25 +331,6 @@ public class Monitor implements MonitorInterface {
     for (int i = 0; i < m.numCols; i++)
       out[i] = (int) m.get(0, i);
     return out;
-  }
-
-  /**
-   * Despierta hilos esperando por transiciones recién habilitadas.
-   *
-   * <p>
-   * Para cada transición habilitada en este refresco, libera permisos en su
-   * semáforo según el número de hilos actualmente contados en espera.
-   *
-   * @param newlyEnabledTransitions transiciones detectadas como nuevas
-   *                                habilitadas.
-   */
-  private void releaseWaitersOnFreshEnable(List<Integer> newlyEnabledTransitions) {
-    for (int transition : newlyEnabledTransitions) {
-      if (Queues.getWaitingCounts().get(0, transition) >= 1) {
-        Queues.decrementWaitingCount(transition);
-        Queues.getSemaphoreForTransition(transition).release();
-      }
-    }
   }
 
   /**

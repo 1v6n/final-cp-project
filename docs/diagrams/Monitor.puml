@@ -31,7 +31,6 @@ loop until fired or interrupted
       M -> R : fireTransition(firingVector, t)
       M -> T : updateFromSensitized(getSensitized())
       M -> T : onTransitionFired(t, stillSensitized)
-      M -> M : releaseWaitersOnFreshEnable(...)
       M -> M : updateSensitizedAndRelease()
       M -> M : releaseMonitor()
       M --> W : true
@@ -40,17 +39,8 @@ loop until fired or interrupted
     else TOO_EARLY
       M -> M : waitUntilEarliestFireTime(t)
       M -> T : getRemainingToEarliest(t)
-      M -> T : getEnableSequence(t)
       M -> M : releaseMonitor()
-      M -> M : sleepWithVersionCheck(...)
-
-    else EXPIRED
-      M -> M : waitForFreshEnableInstance(t)
-      M -> T : getEnableSequence(t)
-      M -> Q : incrementWaitingCount(t)
-      M -> M : releaseMonitor()
-      M -> Q : acquire(sem[t])
-      M -> T : re-check enableSequence
+      M -> M : Thread.sleep(remainingMs)
 
     else NOT_ENABLED (invalid state)
       M -> M : throw IllegalStateException
