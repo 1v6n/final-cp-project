@@ -8,6 +8,7 @@ import org.concurrent.project.Policy.PolicyDecision;
 import org.concurrent.project.Policy.PolicyMode;
 import org.concurrent.project.TimeRestrictions.FireEvaluation;
 import org.ejml.data.DMatrixRMaj;
+import org.ejml.dense.row.CommonOps_DDRM;
 
 /**
  * Coordina el disparo concurrente de transiciones de la RdP mediante exclusión
@@ -346,25 +347,21 @@ public class Monitor implements MonitorInterface {
   }
 
   /**
-   * Libera esperas de transiciones estructuralmente sensibilizadas y
-   * temporalmente permitidas.
+   * Libera esperas de transiciones sensibilizadas con filtrado de política.
    *
    * <p>
-   * Calcula intersección entre transición sensibilizada y cantidad de hilos
-   * esperando. Solo libera semáforos cuando la evaluación temporal devuelve
-   * {@code ALLOWED}.
+   * Construye candidatas de wake-up como transiciones estructuralmente
+   * sensibilizadas y con al menos un hilo esperando. Levanta todos los un 
+   * hilo por transición esperando y sensibilizada
    */
   private void updateSensitizedAndRelease() {
+    List<Integer> wakeEligibleTransitions = getWakeEligibleTransitions();
 
-    DMatrixRMaj sensitized = rdp.getSensitized();
     DMatrixRMaj waiting = Queues.getWaitingCounts();
-
-    for (int i = 0; i < sensitized.numCols; i++) {
-
-      if (sensitized.get(0, i) == 1 && waiting.get(0, i) > 0) {
-
-        Queues.decrementWaitingCount(i);
-        Queues.getSemaphoreForTransition(i).release();
+    for (int transition : wakeEligibleTransitions) {
+      if (waiting.get(0, transition) > 0) {
+        Queues.decrementWaitingCount(transition);
+        Queues.getSemaphoreForTransition(transition).release();
       }
     }
   }
@@ -387,6 +384,27 @@ public class Monitor implements MonitorInterface {
       }
     }
     return enabled;
+  }
+
+  private List<Integer> getWakeEligibleTransitions() {
+    List<Integer> wakeEligible = new java.util.ArrayList<>();
+    DMatrixRMaj sensitized = rdp.getSensitized();
+    DMatrixRMaj waiting = Queues.getWaitingCounts();
+
+    DMatrixRMaj waitingMask = new DMatrixRMaj(1, waiting.numCols);
+    for (int t = 0; t < waiting.numCols; t++) {
+      waitingMask.set(0, t, waiting.get(0, t) > 0 ? 1.0 : 0.0);
+    }
+
+    DMatrixRMaj eligibleMask = new DMatrixRMaj(1, sensitized.numCols);
+    CommonOps_DDRM.elementMult(sensitized, waitingMask, eligibleMask);
+
+    for (int t = 0; t < eligibleMask.numCols; t++) {
+      if (eligibleMask.get(0, t) == 1.0) {
+        wakeEligible.add(t);
+      }
+    }
+    return wakeEligible;
   }
 
 }
