@@ -84,8 +84,8 @@ public class TimeRestrictions {
     /**
      * Configura una transición temporizada con ETF (alpha) y LTF (beta).
      *
-     * <p>En el modelo actual, beta debe ser infinito y se conserva solo como
-     * metadato de configuración.
+     * <p>En la configuración actual del monitor se usa beta infinito por
+     * defecto, pero se admite cualquier beta válido (beta >= alpha).
      *
      * @param transition número de transición.
      * @param alphaMs ETF relativo al instante de sensibilización.
@@ -95,11 +95,12 @@ public class TimeRestrictions {
         if (alphaMs < 0) {
             throw new IllegalArgumentException("alphaMs debe ser >= 0");
         }
-        if (betaMs != INFINITE_BETA) {
-            throw new IllegalArgumentException("betaMs debe ser infinito (Long.MAX_VALUE) en este modelo");
+        if (betaMs != INFINITE_BETA && betaMs < alphaMs) {
+            throw new IllegalArgumentException("betaMs debe ser >= alphaMs o infinito");
         }
         long alphaNs = TimeUnit.MILLISECONDS.toNanos(alphaMs);
-        timedTransitions.put(transition, new TimingConfig(alphaNs, betaMs));
+        long betaNs = (betaMs == INFINITE_BETA) ? INFINITE_BETA : TimeUnit.MILLISECONDS.toNanos(betaMs);
+        timedTransitions.put(transition, new TimingConfig(alphaNs, betaNs));
         runtimeStates.put(transition, new RuntimeState());
     }
 
@@ -174,6 +175,9 @@ public class TimeRestrictions {
         long elapsed = clockNs.getAsLong() - state.enabledAtNs;
         if (elapsed + TIMING_TOLERANCE_NS < config.alphaNs) {
             return FireEvaluation.TOO_EARLY;
+        }
+        if (elapsed - TIMING_TOLERANCE_NS > config.betaNs) {
+            return FireEvaluation.NOT_ENABLED;
         }
         return FireEvaluation.ALLOWED;
     }
