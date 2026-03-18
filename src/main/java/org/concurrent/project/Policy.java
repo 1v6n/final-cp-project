@@ -213,6 +213,11 @@ public class Policy {
   }
 
   public synchronized int choose(List<Integer> candidates) {
+
+    System.out.printf(
+        "[POLICY-CHOOSE] mode=%s candidates=%s forcedA=%d forcedR=%d%n", mode,
+        candidates, forcedAgentTransition, forcedReservationTransition);
+
     if (candidates == null || candidates.isEmpty()) {
       throw new IllegalArgumentException(
           "Candidates list cannot be null or empty");
@@ -221,15 +226,17 @@ public class Policy {
     if (isConflictActive(ConflictGroup.AGENTS, candidates)) {
       int selected = selectForGroup(ConflictGroup.AGENTS);
       setStickySelection(ConflictGroup.AGENTS, selected);
+      System.out.printf("[POLICY-AGENTS] selected=T%d%n", selected);
       return selected;
     }
 
     if (isConflictActive(ConflictGroup.RESERVATIONS, candidates)) {
       int selected = selectForGroup(ConflictGroup.RESERVATIONS);
       setStickySelection(ConflictGroup.RESERVATIONS, selected);
+      System.out.printf("[POLICY-RES] selected=T%d%n", selected);
       return selected;
     }
-
+    System.out.printf("[POLICY-NOCONFLICT] selected=T%d%n", candidates.get(0));
     // si no hay conflicto, simplemente devolvemos el primero
     return candidates.get(0);
   }
