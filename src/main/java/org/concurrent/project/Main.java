@@ -7,7 +7,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-
 import org.concurrent.project.Policy.PolicyMode;
 
 /**
@@ -19,7 +18,7 @@ import org.concurrent.project.Policy.PolicyMode;
  */
 public class Main {
   private static final int TOTAL_RUNS = 186;
-  private static final boolean timed = true;
+  private static final boolean timed = false;
 
   /**
    * Ejecuta la simulación.
@@ -43,10 +42,7 @@ public class Main {
 
       Thread thread0 = createThread0(monitor, completedInvariants, running);
       Thread[] invariantThreads = createInvariantThreads(
-          invariants,
-          monitor,
-          completedInvariants,
-          running);
+          invariants, monitor, completedInvariants, running);
 
       startThreads(thread0, invariantThreads);
 
@@ -67,28 +63,23 @@ public class Main {
   }
 
   private static int[][] buildInvariants() {
-    return new int[][] {
-        {1, 2, 5, 6, 9, 10, 11},
-        {1, 3, 4, 6, 9, 10, 11},
-        {1, 2, 5, 7, 8, 11},
-        {1, 3, 4, 7, 8, 11}
-    };
+    return new int[][] { { 1, 2, 5, 6, 9, 10, 11 },
+        { 1, 3, 4, 6, 9, 10, 11 },
+        { 1, 2, 5, 7, 8, 11 },
+        { 1, 3, 4, 7, 8, 11 } };
   }
 
-  private static Thread createThread0(
-      Monitor monitor,
+  private static Thread createThread0(Monitor monitor,
       AtomicInteger completedInvariants,
       AtomicBoolean running) {
     List<Integer> pathForThread0 = List.of(0);
 
-    return new Thread(
-        new Threads(pathForThread0, monitor, completedInvariants, TOTAL_RUNS, true, running),
+    return new Thread(new Threads(pathForThread0, monitor, completedInvariants,
+        TOTAL_RUNS, true, running),
         "Thread-0");
   }
 
-  private static Thread[] createInvariantThreads(
-      int[][] invariants,
-      Monitor monitor,
+  private static Thread[] createInvariantThreads(int[][] invariants, Monitor monitor,
       AtomicInteger completedInvariants,
       AtomicBoolean running) {
     Thread[] invariantThreads = new Thread[invariants.length];
@@ -99,8 +90,8 @@ public class Main {
         path.add(transition);
       }
 
-      invariantThreads[i] = new Thread(
-          new Threads(path, monitor, completedInvariants, TOTAL_RUNS, false, running),
+      invariantThreads[i] = new Thread(new Threads(path, monitor, completedInvariants, TOTAL_RUNS,
+          false, running),
           "Invariant-Thread-" + (i + 1));
     }
 
@@ -114,17 +105,15 @@ public class Main {
     }
   }
 
-  private static void awaitCompletion(
-      AtomicBoolean running,
-      AtomicInteger completedInvariants) throws InterruptedException {
+  private static void awaitCompletion(AtomicBoolean running,
+      AtomicInteger completedInvariants)
+      throws InterruptedException {
     while (running.get() && completedInvariants.get() < TOTAL_RUNS) {
       Thread.sleep(5);
     }
   }
 
-  private static void stopThreads(
-      AtomicBoolean running,
-      Thread thread0,
+  private static void stopThreads(AtomicBoolean running, Thread thread0,
       Thread[] invariantThreads) {
     running.set(false);
 
@@ -143,12 +132,12 @@ public class Main {
     }
   }
 
-  private static void printSummary(
-      long startTime,
+  private static void printSummary(long startTime,
       AtomicInteger completedInvariants,
       Monitor monitor) {
     System.out.println("All threads have completed.");
-    System.out.println("Total time elapsed: " + (System.currentTimeMillis() - startTime));
+    System.out.println("Total time elapsed: " +
+        (System.currentTimeMillis() - startTime));
     System.out.println("Total invariants runned:" + completedInvariants.get());
     monitor.printPolicySummary();
   }

@@ -3,7 +3,6 @@ package org.concurrent.project;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Semaphore;
-
 import org.concurrent.project.Policy.PolicyDecision;
 import org.concurrent.project.Policy.PolicyMode;
 import org.concurrent.project.TimeRestrictions.FireEvaluation;
@@ -126,7 +125,7 @@ public class Monitor implements MonitorInterface {
         }
 
         waitForSensitization(transition);
-        monitorHeld = false;
+        monitorHeld = true;
         continue;
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();
@@ -155,10 +154,10 @@ public class Monitor implements MonitorInterface {
     switch (evaluation) {
 
       case ALLOWED:
-        PolicyDecision policyDecision = policy.evaluate(transition, getPolicyEligibleTransitions());
-        if (!policyDecision.shouldFire()) {
-          return TransitionStep.RETRY_MONITOR_HELD;
-        }
+        // PolicyDecision policyDecision = policy.evaluate(transition,
+        // getPolicyEligibleTransitions()); if (!policyDecision.shouldFire()) {
+        // return TransitionStep.RETRY_MONITOR_HELD;
+        // }
 
         fireAndReleaseTransition(transition);
         policy.onTransitionFired(transition);
@@ -174,7 +173,8 @@ public class Monitor implements MonitorInterface {
                 + "NOT_ENABLED en temporización. T" + transition);
 
       default:
-        throw new IllegalStateException("FireEvaluation no soportada: " + evaluation);
+        throw new IllegalStateException("FireEvaluation no soportada: " +
+            evaluation);
     }
   }
 
@@ -219,6 +219,10 @@ public class Monitor implements MonitorInterface {
     Queues.incrementWaitingCount(transition);
     releaseMonitor();
     Queues.getSemaphoreForTransition(transition).acquire();
+    // apenas lo despiertan, intenta recuperar el monitor.
+    // Así queda en la cola de 'entry' antes de que
+    // el hilo que hizo el signal vuelva a entrar.
+    catchMonitor();
   }
 
   /**
@@ -351,19 +355,36 @@ public class Monitor implements MonitorInterface {
    *
    * <p>
    * Construye candidatas de wake-up como transiciones estructuralmente
-   * sensibilizadas y con al menos un hilo esperando. Levanta todos los un 
+   * sensibilizadas y con al menos un hilo esperando. Levanta todos los un
    * hilo por transición esperando y sensibilizada
    */
   private void updateSensitizedAndRelease() {
     List<Integer> wakeEligibleTransitions = getWakeEligibleTransitions();
 
-    DMatrixRMaj waiting = Queues.getWaitingCounts();
-    for (int transition : wakeEligibleTransitions) {
-      if (waiting.get(0, transition) > 0) {
-        Queues.decrementWaitingCount(transition);
-        Queues.getSemaphoreForTransition(transition).release();
-      }
+    if (wakeEligibleTransitions.isEmpty()) {
+      return;
     }
+
+    int selectedTransition = policy.choose(wakeEligibleTransitions);
+
+    if (selectedTransition == -1) {
+      return;
+    }
+
+    DMatrixRMaj waiting = Queues.getWaitingCounts();
+    if (waiting.get(0, selectedTransition) > 0) {
+      Queues.decrementWaitingCount(selectedTransition);
+      Queues.getSemaphoreForTransition(selectedTransition).release();
+    }
+    /*
+     * DMatrixRMaj waiting = Queues.getWaitingCounts();
+     * for (int transition : wakeEligibleTransitions) {
+     * if (waiting.get(0, transition) > 0) {
+     * Queues.decrementWaitingCount(transition);
+     * Queues.getSemaphoreForTransition(transition).release();
+     * }
+     * }
+     */
   }
 
   public void printPolicySummary() {
@@ -406,5 +427,4 @@ public class Monitor implements MonitorInterface {
     }
     return wakeEligible;
   }
-
 }
