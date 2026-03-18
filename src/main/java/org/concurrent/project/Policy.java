@@ -5,25 +5,24 @@ import java.util.List;
 public class Policy {
 
   public enum PolicyMode {
-    BALANCED,
-    PRIORITIZED
+    BALANCED, PRIORITIZED
   }
 
-  public record PolicyDecision(boolean shouldFire, int selectedTransition, boolean conflictActive) {
+  public record PolicyDecision(boolean shouldFire, int selectedTransition,
+      boolean conflictActive) {
     public static PolicyDecision allow(int transition) {
       return new PolicyDecision(true, transition, false);
     }
 
-    public static PolicyDecision resolve(boolean shouldFire, int selectedTransition,
+    public static PolicyDecision resolve(boolean shouldFire,
+        int selectedTransition,
         boolean conflictActive) {
       return new PolicyDecision(shouldFire, selectedTransition, conflictActive);
     }
   }
 
   private enum ConflictGroup {
-    AGENTS,
-    RESERVATIONS,
-    NONE
+    AGENTS, RESERVATIONS, NONE
   }
 
   private static final int T2 = 2;
@@ -68,7 +67,8 @@ public class Policy {
     this.agentCycle = 0;
   }
 
-  public PolicyDecision evaluate(int transition, List<Integer> currentlyEnabled) {
+  public PolicyDecision evaluate(int transition,
+      List<Integer> currentlyEnabled) {
     ConflictGroup group = groupForTransition(transition);
     if (group == ConflictGroup.NONE) {
       return PolicyDecision.allow(transition);
@@ -76,7 +76,8 @@ public class Policy {
 
     int stickySelection = getStickySelection(group);
     if (stickySelection != -1) {
-      return PolicyDecision.resolve(transition == stickySelection, stickySelection,
+      return PolicyDecision.resolve(transition == stickySelection,
+          stickySelection,
           isConflictActive(group, currentlyEnabled));
     }
 
@@ -87,7 +88,8 @@ public class Policy {
     int selectedTransition = selectForGroup(group);
     setStickySelection(group, selectedTransition);
 
-    return PolicyDecision.resolve(transition == selectedTransition, selectedTransition, true);
+    return PolicyDecision.resolve(transition == selectedTransition,
+        selectedTransition, true);
   }
 
   // ---------------- BALANCED ----------------
@@ -164,9 +166,12 @@ public class Policy {
 
   private int selectForGroup(ConflictGroup group) {
     return switch (group) {
-      case AGENTS -> (mode == PolicyMode.BALANCED) ? selectBalancedAgent() : selectPrioritizedAgent();
+      case AGENTS ->
+        (mode == PolicyMode.BALANCED) ? selectBalancedAgent()
+            : selectPrioritizedAgent();
       case RESERVATIONS ->
-        (mode == PolicyMode.BALANCED) ? selectBalancedReservation() : selectPrioritizedReservation();
+        (mode == PolicyMode.BALANCED) ? selectBalancedReservation()
+            : selectPrioritizedReservation();
       case NONE -> -1;
     };
   }
@@ -179,10 +184,13 @@ public class Policy {
     };
   }
 
-  private boolean isConflictActive(ConflictGroup group, List<Integer> currentlyEnabled) {
+  private boolean isConflictActive(ConflictGroup group,
+      List<Integer> currentlyEnabled) {
     return switch (group) {
-      case AGENTS -> currentlyEnabled.contains(T2) && currentlyEnabled.contains(T3);
-      case RESERVATIONS -> currentlyEnabled.contains(T6) && currentlyEnabled.contains(T7);
+      case AGENTS ->
+        currentlyEnabled.contains(T2) && currentlyEnabled.contains(T3);
+      case RESERVATIONS ->
+        currentlyEnabled.contains(T6) && currentlyEnabled.contains(T7);
       case NONE -> false;
     };
   }
@@ -202,6 +210,28 @@ public class Policy {
       case NONE -> {
       }
     }
+  }
+
+  public synchronized int choose(List<Integer> candidates) {
+    if (candidates == null || candidates.isEmpty()) {
+      throw new IllegalArgumentException(
+          "Candidates list cannot be null or empty");
+    }
+
+    if (isConflictActive(ConflictGroup.AGENTS, candidates)) {
+      int selected = selectForGroup(ConflictGroup.AGENTS);
+      setStickySelection(ConflictGroup.AGENTS, selected);
+      return selected;
+    }
+
+    if (isConflictActive(ConflictGroup.RESERVATIONS, candidates)) {
+      int selected = selectForGroup(ConflictGroup.RESERVATIONS);
+      setStickySelection(ConflictGroup.RESERVATIONS, selected);
+      return selected;
+    }
+
+    // si no hay conflicto, simplemente devolvemos el primero
+    return candidates.get(0);
   }
 
   // ---------------- STATS ----------------
