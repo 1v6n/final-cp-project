@@ -3,105 +3,92 @@ package org.concurrent.project;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.concurrent.project.Policy.PolicyMode;
 
 /**
- * Punto de entrada de la simulación concurrente de la red de Petri.
- *
- * <p>
- * Inicializa modelo, monitor y pool de hilos (habilitador + invariantes),
- * y espera finalización al completar la cantidad objetivo de invariantes.
+ * Entry point for the concurrent Petri net simulation.
  */
 public class Main {
   private static final int TOTAL_RUNS = 186;
   private static final boolean timed = false;
 
-  /**
-   * Ejecuta la simulación.
-   *
-   * @param args argumentos de línea de comandos.
-   */
-  public static void main(String[] args) {
+  private record WorkerSpec(String name, List<Integer> path,
+      boolean countsCompletion) {
+  }
 
+  public static void main(String[] args) {
     Path logPath = Paths.get("logs", "run.log");
 
     try (LogService logService = new LogService(logPath)) {
-
       RdP rdP = new RdP();
-      Monitor monitor = new Monitor(rdP, timed, logService, PolicyMode.PRIORITIZED);
+      Monitor monitor = new Monitor(rdP, timed, logService,
+          PolicyMode.PRIORITIZED);
 
       long startTime = System.currentTimeMillis();
-      int[][] invariants = buildInvariants();
-
       AtomicInteger completedInvariants = new AtomicInteger(0);
       AtomicBoolean running = new AtomicBoolean(true);
 
-      Thread thread0 = createThread0(monitor, completedInvariants, running);
-      Thread[] invariantThreads = createInvariantThreads(
-          invariants, monitor, completedInvariants, running);
+      Thread[] workers = createWorkers(monitor, completedInvariants, running);
 
-      startThreads(thread0, invariantThreads);
+      startThreads(workers);
 
       try {
         awaitCompletion(running, completedInvariants);
-        stopThreads(running, thread0, invariantThreads);
-        joinThreads(thread0, invariantThreads);
+        stopThreads(running, workers);
+        joinThreads(workers);
       } catch (InterruptedException e) {
-        stopThreads(running, thread0, invariantThreads);
+        stopThreads(running, workers);
         Thread.currentThread().interrupt();
       }
 
       printSummary(startTime, completedInvariants, monitor);
-
     } catch (IOException e) {
       e.printStackTrace();
     }
   }
 
-  private static int[][] buildInvariants() {
-    return new int[][] { { 1, 2, 5, 6, 9, 10, 11 },
-        { 1, 3, 4, 6, 9, 10, 11 },
-        { 1, 2, 5, 7, 8, 11 },
-        { 1, 3, 4, 7, 8, 11 } };
-  }
-
-  private static Thread createThread0(Monitor monitor,
+  private static Thread[] createWorkers(Monitor monitor,
       AtomicInteger completedInvariants,
       AtomicBoolean running) {
-    List<Integer> pathForThread0 = List.of(0);
+    List<WorkerSpec> workerSpecs = List.of(
+        /*new WorkerSpec("ReservationConfirmTailWorker", List.of(9, 10, 11),
+            true),
+        new WorkerSpec("ReservationCancelTailWorker", List.of(8, 11), true),
+        new WorkerSpec("ReservationConfirmChoiceWorker", List.of(6), false),
+        new WorkerSpec("ReservationCancelChoiceWorker", List.of(7), false),
+        new WorkerSpec("AgentSuperiorTailWorker", List.of(5), false),
+        new WorkerSpec("AgentInferiorTailWorker", List.of(4), false),
+        new WorkerSpec("AgentSuperiorChoiceWorker", List.of(2), false),
+        new WorkerSpec("AgentInferiorChoiceWorker", List.of(3), false),
+        new WorkerSpec("InputWorker", List.of(0, 1), false));*/
 
-    return new Thread(new Threads(pathForThread0, monitor, completedInvariants,
-        TOTAL_RUNS, true, running),
-        "Thread-0");
-  }
+        new WorkerSpec("ReservationConfirmTailWorker", List.of(9, 10, 11), true),
+        new WorkerSpec("ReservationCancelTailWorker", List.of(8, 11), true),
+        new WorkerSpec("ReservationConfirmChoiceWorker", List.of(6), false),
+        new WorkerSpec("ReservationCancelChoiceWorker", List.of(7), false),
+        new WorkerSpec("AgentSuperiorChoiceWorker", List.of(2, 5), false),
+        new WorkerSpec("AgentInferiorChoiceWorker", List.of(3, 4), false),
+        new WorkerSpec("InputWorker", List.of(0, 1), false)
+    );
 
-  private static Thread[] createInvariantThreads(int[][] invariants, Monitor monitor,
-      AtomicInteger completedInvariants,
-      AtomicBoolean running) {
-    Thread[] invariantThreads = new Thread[invariants.length];
-
-    for (int i = 0; i < invariants.length; i++) {
-      List<Integer> path = new ArrayList<>();
-      for (int transition : invariants[i]) {
-        path.add(transition);
-      }
-
-      invariantThreads[i] = new Thread(new Threads(path, monitor, completedInvariants, TOTAL_RUNS,
-          false, running),
-          "Invariant-Thread-" + (i + 1));
+    Thread[] workers = new Thread[workerSpecs.size()];
+    for (int i = 0; i < workerSpecs.size(); i++) {
+      WorkerSpec spec = workerSpecs.get(i);
+      workers[i] = new Thread(
+          new Threads(spec.path(), monitor, completedInvariants, TOTAL_RUNS,
+              spec.countsCompletion(), running),
+          spec.name());
     }
 
-    return invariantThreads;
+    return workers;
   }
 
-  private static void startThreads(Thread thread0, Thread[] invariantThreads) {
-    thread0.start();
-    for (Thread thread : invariantThreads) {
-      thread.start();
+  private static void startThreads(Thread[] workers) {
+    for (Thread worker : workers) {
+      worker.start();
     }
   }
 
@@ -113,22 +100,17 @@ public class Main {
     }
   }
 
-  private static void stopThreads(AtomicBoolean running, Thread thread0,
-      Thread[] invariantThreads) {
+  private static void stopThreads(AtomicBoolean running, Thread[] workers) {
     running.set(false);
-
-    // Interrumpimos TODOS los hilos solo para desbloquear esperas
-    thread0.interrupt();
-    for (Thread thread : invariantThreads) {
-      thread.interrupt();
+    for (Thread worker : workers) {
+      worker.interrupt();
     }
   }
 
-  private static void joinThreads(Thread thread0, Thread[] invariantThreads)
+  private static void joinThreads(Thread[] workers)
       throws InterruptedException {
-    thread0.join();
-    for (Thread thread : invariantThreads) {
-      thread.join();
+    for (Thread worker : workers) {
+      worker.join();
     }
   }
 
