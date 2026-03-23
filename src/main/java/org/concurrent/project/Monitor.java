@@ -3,7 +3,6 @@ package org.concurrent.project;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Semaphore;
-import org.concurrent.project.Policy.PolicyDecision;
 import org.concurrent.project.Policy.PolicyMode;
 import org.concurrent.project.TimeRestrictions.FireEvaluation;
 import org.ejml.data.DMatrixRMaj;
@@ -125,19 +124,11 @@ public class Monitor implements MonitorInterface {
         }
         monitorHeld = false;
         waitForSensitization(transition);
-
-        System.out.printf(
-            "[FIRE-LOOP] th=%s T%d monitorHeld=%s isSensitized=%s%n",
-            Thread.currentThread().getName(), transition, monitorHeld,
-            isSensitized);
         continue;
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();
         return false;
       } finally {
-        System.out.printf("[FINALLY] th=%s T%d monitorHeld=%s permits=%d%n",
-            Thread.currentThread().getName(), transition,
-            monitorHeld, entry.availablePermits());
         if (monitorHeld) {
           releaseMonitor();
         }
@@ -220,31 +211,11 @@ public class Monitor implements MonitorInterface {
    */
   private void waitForSensitization(int transition)
       throws InterruptedException {
-    // System.out.println("T" + transition +
-    // " no sensibilizada. Esperando en semáforo: " +
-    // Thread.currentThread().getName());
-    System.out.printf("[WAIT-BEFORE] th=%s T%d waitingBefore=%.0f sens=%s%n",
-        Thread.currentThread().getName(), transition,
-        Queues.getWaitingCounts().get(0, transition),
-        rdp.getSensitized());
-
     Queues.incrementWaitingCount(transition);
-
-    System.out.printf("[WAIT-SLEEP] th=%s T%d waitingAfter=%.0f%n",
-        Thread.currentThread().getName(), transition,
-        Queues.getWaitingCounts().get(0, transition));
 
     releaseMonitor();
 
     Queues.getSemaphoreForTransition(transition).acquire();
-
-    System.out.printf("[WAIT-SIGNALED] th=%s T%d permitsEntry=%d%n",
-        Thread.currentThread().getName(), transition,
-        entry.availablePermits());
-    // apenas lo despiertan, intenta recuperar el monitor.
-    // Así queda en la cola de 'entry' antes de que
-    // el hilo que hizo el signal vuelva a entrar.
-    // catchMonitor();
   }
 
   /**
@@ -257,14 +228,7 @@ public class Monitor implements MonitorInterface {
    * @throws InterruptedException si el hilo es interrumpido mientras espera.
    */
   private void catchMonitor() throws InterruptedException {
-    System.out.printf("[MONITOR-ACQUIRE-TRY] th=%s permits=%d%n",
-        Thread.currentThread().getName(),
-        entry.availablePermits());
-    // System.out.println("Catching Monitor");
     entry.acquire();
-    System.out.printf("[MONITOR-ACQUIRED] th=%s permits=%d%n",
-        Thread.currentThread().getName(),
-        entry.availablePermits());
   }
 
   /**
@@ -274,16 +238,9 @@ public class Monitor implements MonitorInterface {
    * Permite que otros hilos en espera ingresen al ciclo de evaluación/disparo.
    */
   private void releaseMonitor() {
-    int before = entry.availablePermits();
-    System.out.printf("[MONITOR-RELEASE] th=%s permits(before)=%d%n",
-        Thread.currentThread().getName(), before);
-
     entry.release();
 
     int after = entry.availablePermits();
-    System.out.printf("[MONITOR-RELEASED] th=%s permits(after)=%d%n",
-        Thread.currentThread().getName(), after);
-
     if (after > 1) {
       throw new IllegalStateException("Monitor roto: entry quedó con " + after +
           " permisos tras release de " +
@@ -409,21 +366,12 @@ public class Monitor implements MonitorInterface {
 
     int selectedTransition = policy.choose(wakeEligibleTransitions);
 
-    System.out.printf("[WAKE-SELECT] th=%s selected=T%d%n",
-        Thread.currentThread().getName(), selectedTransition);
-
     if (selectedTransition == -1) {
       return;
     }
 
     DMatrixRMaj waiting = Queues.getWaitingCounts();
     if (waiting.get(0, selectedTransition) > 0) {
-
-      System.out.printf(
-          "[WAKE-RELEASE] th=%s releasing T%d waitingBefore=%.0f%n",
-          Thread.currentThread().getName(), selectedTransition,
-          waiting.get(0, selectedTransition));
-
       Queues.decrementWaitingCount(selectedTransition);
       Queues.getSemaphoreForTransition(selectedTransition).release();
     }
