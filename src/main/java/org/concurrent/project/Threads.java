@@ -8,130 +8,106 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Worker ejecutor de secuencias de transiciones sobre el monitor.
  *
  * <p>
- * Puede operar como hilo habilitador (T0) o como hilo de invariante.
+ * Cada hilo queda asociado a un camino fijo de la red. Segun su configuracion,
+ * completar ese camino puede o no contar como una invariante completada.
  */
 public class Threads implements Runnable {
   private final List<Integer> path;
   private final int totalInvariants;
   private final MonitorInterface monitor;
   private final AtomicInteger completedInvariants;
-  private final boolean isThread0;
+  private final boolean countsCompletion;
   private final AtomicBoolean running;
 
   /**
-   * Construye un worker de ejecución de transiciones.
+   * Construye un worker de ejecucion de transiciones.
    *
-   * @param path                secuencia de transiciones a ejecutar por este
-   *                            hilo.
-   * @param monitor             monitor usado para disparar transiciones.
+   * @param path secuencia fija de transiciones a ejecutar por este hilo.
+   * @param monitor monitor usado para disparar transiciones.
    * @param completedInvariants contador global de invariantes completados.
-   * @param totalInvariants     objetivo total de invariantes.
-   * @param isThread0           {@code true} si el hilo actúa como habilitador
-   *                            principal.
+   * @param totalInvariants objetivo total de invariantes.
+   * @param countsCompletion {@code true} si completar el camino debe acreditar
+   *        una invariante finalizada.
+   * @param running bandera global de ejecucion/paro compartida por todos los
+   *        workers.
    */
   public Threads(List<Integer> path,
       MonitorInterface monitor,
-      AtomicInteger completedInvariants, int totalInvariants,
-      boolean isThread0, AtomicBoolean running) {
+      AtomicInteger completedInvariants,
+      int totalInvariants,
+      boolean countsCompletion,
+      AtomicBoolean running) {
     this.path = path;
     this.totalInvariants = totalInvariants;
     this.monitor = monitor;
     this.completedInvariants = completedInvariants;
-    this.isThread0 = isThread0;
+    this.countsCompletion = countsCompletion;
     this.running = running;
   }
 
   /**
-   * Ejecuta el ciclo principal del hilo según su rol.
+   * Ejecuta el ciclo principal del hilo segun su camino configurado.
    *
    * <p>
-   * Si es hilo habilitador, intenta disparar continuamente su transición de
-   * entrada hasta alcanzar el objetivo global o ser detenido. Si es hilo de
-   * invariante, ejecuta su secuencia completa.
+   * El worker intenta recorrer siempre la misma secuencia de transiciones. Si
+   * logra completar toda la secuencia y su rol lo requiere, reclama
+   * atomicamente un slot del contador global de invariantes.
    */
   @Override
   public void run() {
+    while (running.get()) {
+      // Chequeo global antes de empezar una nueva vuelta completa.
+      if (completedInvariants.get() >= totalInvariants) {
+        running.set(false);
+        break;
+      }
 
-    if (isThread0) {
-
-      int transition = path.get(0);
-
-      while (running.get()) {
+      // Ejecutar la secuencia completa asociada a este worker.
+      boolean sequenceCompleted = true;
+      for (int transition : path) {
+        if (!running.get()) {
+          sequenceCompleted = false;
+          break;
+        }
 
         if (completedInvariants.get() >= totalInvariants) {
           running.set(false);
+          sequenceCompleted = false;
           break;
         }
 
-        boolean fired = monitor.fireTransition(transition);
-
-        if (!fired && !running.get()) {
+        if (!monitor.fireTransition(transition)) {
+          sequenceCompleted = false;
           break;
         }
       }
 
-    } else {
-
-      while (running.get()) {
-
-        // Chequeo global antes de empezar
-        int current = completedInvariants.get();
-        if (current >= totalInvariants) {
-          running.set(false);
-          break;
-        }
-
-        // Ejecutar secuencia completa
-        boolean sequenceCompleted = true;
-        for (int transition : path) {
-
-          if (!running.get()) {
-            sequenceCompleted = false;
-            break;
-          }
-
-          if (completedInvariants.get() >= totalInvariants) {
-            running.set(false);
-            sequenceCompleted = false;
-            break;
-          }
-
-          if (!monitor.fireTransition(transition)) {
-            if (!running.get()) {
-              sequenceCompleted = false;
-              break;
-            }
-            sequenceCompleted = false;
-            break;
-          }
-        }
-
-        if (!running.get()) {
-          break;
-        }
-        if (!sequenceCompleted) {
-          continue;
-        }
-
-        // Reclamar slot global de manera atómica
-        int completed = completedInvariants.incrementAndGet();
-
-        if (completed > totalInvariants) {
-          // Evita overshoot
-          completedInvariants.decrementAndGet();
-          running.set(false);
-          break;
-        }
-        if (completed >= totalInvariants) {
-          running.set(false);
-        }
-
-        int remaining = totalInvariants - completed;
-
-        System.out.printf(
-            "Thread %s: Completed one invariant. Remaining: %d.%n",
-            Thread.currentThread().getName(), remaining);
+      // Si el sistema ya esta frenando, no seguir procesando resultados.
+      if (!running.get()) {
+        break;
       }
+      // Los workers intermedios no acreditan invariantes; solo alimentan a los
+      // caminos que terminan en T11.
+      if (!sequenceCompleted || !countsCompletion) {
+        continue;
+      }
+
+      // Reclamar slot global de manera atomica.
+      int completed = completedInvariants.incrementAndGet();
+      if (completed > totalInvariants) {
+        // Evita overshoot si dos hilos completan casi al mismo tiempo.
+        completedInvariants.decrementAndGet();
+        running.set(false);
+        break;
+      }
+      if (completed >= totalInvariants) {
+        running.set(false);
+      }
+
+      int remaining = totalInvariants - completed;
+      System.out.printf(
+          "Thread %s: Completed one invariant. Remaining: %d.%n",
+          Thread.currentThread().getName(), remaining);
     }
 
     System.out.printf(
