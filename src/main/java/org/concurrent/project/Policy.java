@@ -213,11 +213,6 @@ public class Policy {
   }
 
   public synchronized int choose(List<Integer> candidates) {
-
-    System.out.printf(
-        "[POLICY-CHOOSE] mode=%s candidates=%s forcedA=%d forcedR=%d%n", mode,
-        candidates, forcedAgentTransition, forcedReservationTransition);
-
     if (candidates == null || candidates.isEmpty()) {
       throw new IllegalArgumentException(
           "Candidates list cannot be null or empty");
@@ -226,84 +221,104 @@ public class Policy {
     if (isConflictActive(ConflictGroup.AGENTS, candidates)) {
       int selected = selectForGroup(ConflictGroup.AGENTS);
       setStickySelection(ConflictGroup.AGENTS, selected);
-      System.out.printf("[POLICY-AGENTS] selected=T%d%n", selected);
       return selected;
     }
 
     if (isConflictActive(ConflictGroup.RESERVATIONS, candidates)) {
       int selected = selectForGroup(ConflictGroup.RESERVATIONS);
       setStickySelection(ConflictGroup.RESERVATIONS, selected);
-      System.out.printf("[POLICY-RES] selected=T%d%n", selected);
       return selected;
     }
-    System.out.printf("[POLICY-NOCONFLICT] selected=T%d%n", candidates.get(0));
     // si no hay conflicto, simplemente devolvemos el primero
     return candidates.get(0);
   }
 
   // ---------------- STATS ----------------
   public synchronized void printSummary() {
-
-    System.out.println("\n================= RESULTADOS =================");
-
-    // ================= AGENTES =================
     int totalAgents = agentInferiorCount + agentSuperiorCount;
     int totalConflictAgents = conflictAgentInferior + conflictAgentSuperior;
     int forcedAgents = totalAgents - totalConflictAgents;
-
-    System.out.println("\n--- AGENTES (T2 vs T3) ---");
-    System.out.println("Total disparos: " + totalAgents);
-
-    System.out.println("  En conflicto: " + totalConflictAgents);
-    System.out.println("    T2 (superior): " + conflictAgentSuperior);
-    System.out.println("    T3 (inferior): " + conflictAgentInferior);
-
-    if (totalConflictAgents > 0) {
-      System.out.printf("    %% Superior (conflicto): %.2f%%\n",
-          100.0 * conflictAgentSuperior / totalConflictAgents);
-    }
-
-    System.out.println("  Sin conflicto: " + forcedAgents);
-
-    System.out.println("  TOTAL GLOBAL:");
-    System.out.println("    T2: " + agentSuperiorCount);
-    System.out.println("    T3: " + agentInferiorCount);
-
-    if (totalAgents > 0) {
-      System.out.printf("    %% Superior (global): %.2f%%\n",
-          100.0 * agentSuperiorCount / totalAgents);
-    }
-
-    // ================= RESERVAS =================
     int totalReservations = confirmedReservations + cancelledReservations;
     int totalConflictReservations = conflictConfirmed + conflictCancelled;
     int forcedReservations = totalReservations - totalConflictReservations;
+    StringBuilder summary = new StringBuilder();
 
-    System.out.println("\n--- RESERVAS (T6 vs T7) ---");
-    System.out.println("Total disparos: " + totalReservations);
+    summary.append(System.lineSeparator())
+        .append("================= RESULTADOS =================")
+        .append(System.lineSeparator())
+        .append(System.lineSeparator())
+        .append("--- AGENTES (T2 vs T3) ---")
+        .append(System.lineSeparator())
+        .append("Total disparos: ").append(totalAgents).append(System.lineSeparator())
+        .append("  En conflicto: ").append(totalConflictAgents)
+        .append(System.lineSeparator())
+        .append("    T2 (superior): ").append(conflictAgentSuperior)
+        .append(System.lineSeparator())
+        .append("    T3 (inferior): ").append(conflictAgentInferior)
+        .append(System.lineSeparator());
 
-    System.out.println("  En conflicto: " + totalConflictReservations);
-    System.out.println("    T6 (confirmadas): " + conflictConfirmed);
-    System.out.println("    T7 (canceladas): " + conflictCancelled);
+    if (totalConflictAgents > 0) {
+      summary.append(String.format("    %% Superior (conflicto): %.2f%%%n",
+          100.0 * conflictAgentSuperior / totalConflictAgents));
+    }
+
+    summary.append("  Sin conflicto: ").append(forcedAgents)
+        .append(System.lineSeparator())
+        .append("  TOTAL GLOBAL:")
+        .append(System.lineSeparator())
+        .append("    T2: ").append(agentSuperiorCount)
+        .append(System.lineSeparator())
+        .append("    T3: ").append(agentInferiorCount)
+        .append(System.lineSeparator());
+
+    if (totalAgents > 0) {
+      summary.append(String.format("    %% Superior (global): %.2f%%%n",
+          100.0 * agentSuperiorCount / totalAgents));
+    }
+
+    summary.append(System.lineSeparator())
+        .append("--- RESERVAS (T6 vs T7) ---")
+        .append(System.lineSeparator())
+        .append("Total disparos: ").append(totalReservations)
+        .append(System.lineSeparator())
+        .append("  En conflicto: ").append(totalConflictReservations)
+        .append(System.lineSeparator())
+        .append("    T6 (confirmadas): ").append(conflictConfirmed)
+        .append(System.lineSeparator())
+        .append("    T7 (canceladas): ").append(conflictCancelled)
+        .append(System.lineSeparator());
 
     if (totalConflictReservations > 0) {
-      System.out.printf("    %% Confirmadas (conflicto): %.2f%%\n",
-          100.0 * conflictConfirmed / totalConflictReservations);
+      summary.append(String.format("    %% Confirmadas (conflicto): %.2f%%%n",
+          100.0 * conflictConfirmed / totalConflictReservations));
     }
 
-    System.out.println("  Sin conflicto: " + forcedReservations);
-
-    System.out.println("  TOTAL GLOBAL:");
-    System.out.println("    T6: " + confirmedReservations);
-    System.out.println("    T7: " + cancelledReservations);
+    summary.append("  Sin conflicto: ").append(forcedReservations)
+        .append(System.lineSeparator())
+        .append("  TOTAL GLOBAL:")
+        .append(System.lineSeparator())
+        .append("    T6: ").append(confirmedReservations)
+        .append(System.lineSeparator())
+        .append("    T7: ").append(cancelledReservations)
+        .append(System.lineSeparator());
 
     if (totalReservations > 0) {
-      System.out.printf("    %% Confirmadas (global): %.2f%%\n",
-          100.0 * confirmedReservations / totalReservations);
+      summary.append(String.format("    %% Confirmadas (global): %.2f%%%n",
+          100.0 * confirmedReservations / totalReservations));
     }
 
-    System.out.println("\n================================================\n");
-    debugTotals();
+    summary.append(System.lineSeparator())
+        .append("================================================")
+        .append(System.lineSeparator())
+        .append(System.lineSeparator())
+        .append("Agents real total: ")
+        .append(agentInferiorCount + agentSuperiorCount)
+        .append(System.lineSeparator())
+        .append("Reservations real total: ")
+        .append(confirmedReservations + cancelledReservations)
+        .append(System.lineSeparator());
+
+    System.out.print(summary.toString());
   }
 
   public void debugTotals() {
