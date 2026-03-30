@@ -113,7 +113,14 @@ public class Monitor implements MonitorInterface {
         boolean isSensitized = (rdp.getSensitized().get(0, transition) == 1);
 
         if (isSensitized) {
-          TransitionStep step = handleSensitizedTransition(transition);
+          TransitionStep step;
+          try {
+            step = handleSensitizedTransition(transition);
+          } catch (InterruptedException e) {
+            monitorHeld = false;
+            throw e;
+          }
+
           if (step == TransitionStep.FIRED) {
             return true;
           }
