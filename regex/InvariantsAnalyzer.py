@@ -101,10 +101,10 @@ def count_invariants(sequence):
     pattern, replacement = build_regex()
 
     counters = {
-        "T2-T5 / T6-T9-T10-T11": 0,
-        "T2-T5 / T7-T8-T11": 0,
-        "T3-T4 / T6-T9-T10-T11": 0,
-        "T3-T4 / T7-T8-T11": 0,
+        "T0-T1-T2-T5 / T6-T9-T10-T11": 0,
+        "T0-T1-T2-T5 / T7-T8-T11": 0,
+        "T0-T1-T3-T4 / T6-T9-T10-T11": 0,
+        "T0-T1-T3-T4 / T7-T8-T11": 0,
     }
 
     count = 0
@@ -120,13 +120,13 @@ def count_invariants(sequence):
         took_right = (m.group(17) is not None)  # T7...T8
 
         if took_upper and took_left:
-            counters["T2-T5 / T6-T9-T10-T11"] += 1
+            counters["T0-T1-T2-T5 / T6-T9-T10-T11"] += 1
         elif took_upper and took_right:
-            counters["T2-T5 / T7-T8-T11"] += 1
+            counters["T0-T1-T2-T5 / T7-T8-T11"] += 1
         elif took_lower and took_left:
-            counters["T3-T4 / T6-T9-T10-T11"] += 1
+            counters["T0-T1-T3-T4 / T6-T9-T10-T11"] += 1
         elif took_lower and took_right:
-            counters["T3-T4 / T7-T8-T11"] += 1
+            counters["T0-T1-T3-T4 / T7-T8-T11"] += 1
         else:
             # Caso raro: matcheó pero no pudimos clasificar
             raise RuntimeError("Match encontrado pero no se pudo clasificar la rama del invariante")
