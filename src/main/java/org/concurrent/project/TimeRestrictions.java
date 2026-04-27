@@ -11,8 +11,8 @@ import java.util.function.LongSupplier;
 
 /**
  * Gestiona restricciones temporales de disparo para transiciones de la RdP.
- *
- * <p>Implementa evaluación en semántica débil sobre ETF (alpha) por instancia
+ * <p>
+ * Implementa evaluación en semántica débil sobre ETF (alpha) por instancia
  * de habilitación, con LTF infinito (sin expiración).
  */
 public class TimeRestrictions {
@@ -59,8 +59,8 @@ public class TimeRestrictions {
 
     /**
      * Construye el gestor temporal con un proveedor de tiempo inyectable.
-     *
-     * <p>Visible a paquete para facilitar pruebas determinísticas del
+     * <p>
+     * Visible a paquete para facilitar pruebas determinísticas del
      * comportamiento temporal.
      *
      * @param clockNs proveedor de tiempo en nanosegundos.
@@ -75,7 +75,7 @@ public class TimeRestrictions {
      * Configura una transición temporizada con ETF (alpha) y beta infinito.
      *
      * @param transition número de transición.
-     * @param alphaMs ETF relativo al instante de sensibilización.
+     * @param alphaMs    ETF relativo al instante de sensibilización.
      */
     public void setTimedTransition(int transition, long alphaMs) {
         setTimedTransition(transition, alphaMs, INFINITE_BETA);
@@ -83,21 +83,23 @@ public class TimeRestrictions {
 
     /**
      * Configura una transición temporizada con ETF (alpha) y LTF (beta).
-     *
-     * <p>En la configuración actual del monitor se usa beta infinito por
+     * <p>
+     * En la configuración actual del monitor se usa beta infinito por
      * defecto, pero se admite cualquier beta válido (beta >= alpha).
      *
      * @param transition número de transición.
-     * @param alphaMs ETF relativo al instante de sensibilización.
-     * @param betaMs LTF relativo al instante de sensibilización.
+     * @param alphaMs    ETF relativo al instante de sensibilización.
+     * @param betaMs     LTF relativo al instante de sensibilización.
      */
     public void setTimedTransition(int transition, long alphaMs, long betaMs) {
         if (alphaMs < 0) {
             throw new IllegalArgumentException("alphaMs debe ser >= 0");
         }
+
         if (betaMs != INFINITE_BETA && betaMs < alphaMs) {
             throw new IllegalArgumentException("betaMs debe ser >= alphaMs o infinito");
         }
+
         long alphaNs = TimeUnit.MILLISECONDS.toNanos(alphaMs);
         long betaNs = (betaMs == INFINITE_BETA) ? INFINITE_BETA : TimeUnit.MILLISECONDS.toNanos(betaMs);
         timedTransitions.put(transition, new TimingConfig(alphaNs, betaNs));
@@ -108,7 +110,8 @@ public class TimeRestrictions {
      * Verifica si una transición tiene restricciones de tiempo.
      *
      * @param transition número de transición.
-     * @return {@code true} si la transición es temporizada; {@code false} en caso contrario.
+     * @return {@code true} si la transición es temporizada; {@code false} en caso
+     *         contrario.
      */
     public boolean isTimedTransition(int transition) {
         return timedTransitions.containsKey(transition);
@@ -117,42 +120,51 @@ public class TimeRestrictions {
     /**
      * Refresca estado temporal de una transición según su sensibilización actual.
      *
-     * @param transition número de transición.
+     * @param transition   número de transición.
      * @param isSensitized {@code true} si la transición está sensibilizada.
-     * @return {@code true} si se detectó una nueva habilitación en esta actualización;
+     * @return {@code true} si se detectó una nueva habilitación en esta
+     *         actualización;
      *         {@code false} en cualquier otro caso.
      */
     public boolean updateSensitizationState(int transition, boolean isSensitized) {
         if (!isTimedTransition(transition)) {
             return false;
         }
+
         RuntimeState state = runtimeStates.get(transition);
         if (isSensitized && !state.sensitized) {
             state.sensitized = true;
             state.enabledAtNs = clockNs.getAsLong();
             return true;
         }
+
         if (!isSensitized && state.sensitized) {
             state.sensitized = false;
         }
+
         return false;
     }
 
     /**
-     * Refresca estado temporal de todas las transiciones temporizadas desde la matriz de sensibilización.
+     * Refresca estado temporal de todas las transiciones temporizadas desde la
+     * matriz de sensibilización.
      *
      * @param sensitized matriz 1xN de transiciones sensibilizadas.
-     * @return lista de transiciones que pasaron de no sensibilizadas a sensibilizadas.
+     * @return lista de transiciones que pasaron de no sensibilizadas a
+     *         sensibilizadas.
      */
     public List<Integer> updateFromSensitized(DMatrixRMaj sensitized) {
         List<Integer> newlyEnabledTransitions = new ArrayList<>();
+
         for (Map.Entry<Integer, TimingConfig> entry : timedTransitions.entrySet()) {
             int transition = entry.getKey();
             boolean isSensitized = sensitized.get(0, transition) == 1;
+
             if (updateSensitizationState(transition, isSensitized)) {
                 newlyEnabledTransitions.add(transition);
             }
         }
+
         return newlyEnabledTransitions;
     }
 
@@ -166,6 +178,7 @@ public class TimeRestrictions {
         if (!isTimedTransition(transition)) {
             return FireEvaluation.ALLOWED;
         }
+
         RuntimeState state = runtimeStates.get(transition);
         if (!state.sensitized) {
             return FireEvaluation.NOT_ENABLED;
@@ -176,9 +189,11 @@ public class TimeRestrictions {
         if (elapsed + TIMING_TOLERANCE_NS < config.alphaNs) {
             return FireEvaluation.TOO_EARLY;
         }
+
         if (elapsed - TIMING_TOLERANCE_NS > config.betaNs) {
             return FireEvaluation.NOT_ENABLED;
         }
+
         return FireEvaluation.ALLOWED;
     }
 
@@ -207,15 +222,18 @@ public class TimeRestrictions {
     }
 
     /**
-     * Marca nueva instancia de habilitación tras disparar la transición (si continúa sensibilizada).
+     * Marca nueva instancia de habilitación tras disparar la transición (si
+     * continúa sensibilizada).
      *
-     * @param transition número de transición.
-     * @param isStillSensitized {@code true} si continúa sensibilizada tras el disparo.
+     * @param transition        número de transición.
+     * @param isStillSensitized {@code true} si continúa sensibilizada tras el
+     *                          disparo.
      */
     public void onTransitionFired(int transition, boolean isStillSensitized) {
         if (!isTimedTransition(transition)) {
             return;
         }
+
         RuntimeState state = runtimeStates.get(transition);
         if (isStillSensitized) {
             state.enabledAtNs = clockNs.getAsLong();

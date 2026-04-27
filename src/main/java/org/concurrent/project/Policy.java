@@ -2,21 +2,61 @@ package org.concurrent.project;
 
 import java.util.List;
 
+/**
+ * Clase que implementa la política de selección de transiciones para el monitor
+ * de disparo.
+ */
 public class Policy {
-
   public enum PolicyMode {
     BALANCED, PRIORITIZED
   }
 
-  public record PolicyDecision(boolean shouldFire, int selectedTransition,
-      boolean conflictActive) {
+  /**
+   * Registro que representa la decisión de política sobre si una transición debe
+   * dispararse.
+   * <p>
+   * Incluye información sobre si el disparo fue permitido, cuál transición fue
+   * seleccionada
+   * (en caso de conflicto) y si la decisión se tomó en un contexto de conflicto
+   * activo.
+   * 
+   * @param shouldFire         indica si la transición solicitada debe dispararse.
+   * @param selectedTransition la transición seleccionada por la política
+   *                           (relevante solo si hay conflicto).
+   * @param conflictActive     indica si la decisión se tomó en un contexto donde
+   *                           el conflicto estaba activo (ambas transiciones
+   *                           habilitadas).
+   */
+  public record PolicyDecision(boolean shouldFire, int selectedTransition, boolean conflictActive) {
+    /**
+     * Crea una decisión de política que permite el disparo de la transición
+     * solicitada
+     * sin conflicto.
+     *
+     * @param transition la transición que se permitirá disparar.
+     * @return una instancia de {@code PolicyDecision} que indica que el disparo
+     *         está permitido
+     *         y que no hay conflicto activo.
+     */
     public static PolicyDecision allow(int transition) {
       return new PolicyDecision(true, transition, false);
     }
 
-    public static PolicyDecision resolve(boolean shouldFire,
-        int selectedTransition,
-        boolean conflictActive) {
+    /**
+     * Crea una decisión de política basada en la evaluación de si la transición
+     * solicitada debe dispararse, cuál transición fue seleccionada en caso de
+     * conflicto, y si el conflicto estaba activo.
+     * 
+     * @param shouldFire         indica si la transición solicitada debe dispararse.
+     * @param selectedTransition la transición seleccionada por la política
+     *                           (relevante solo si hay conflicto).
+     * @param conflictActive     indica si la decisión se tomó en un contexto donde
+     *                           el conflicto estaba activo (ambas transiciones
+     *                           habilitadas).
+     * @return una instancia de {@code PolicyDecision} que encapsula la decisión de
+     *         política basada en los parámetros proporcionados.
+     */
+    public static PolicyDecision resolve(boolean shouldFire, int selectedTransition, boolean conflictActive) {
       return new PolicyDecision(shouldFire, selectedTransition, conflictActive);
     }
   }
@@ -24,11 +64,6 @@ public class Policy {
   private enum ConflictGroup {
     AGENTS, RESERVATIONS, NONE
   }
-
-  private static final int T2 = 2;
-  private static final int T3 = 3;
-  private static final int T6 = 6;
-  private static final int T7 = 7;
 
   private final PolicyMode mode;
 
@@ -55,6 +90,11 @@ public class Policy {
   private int conflictConfirmed;
   private int conflictCancelled;
 
+  /**
+   * Crea una instancia de {@code Policy} con el modo de política especificado.
+   *
+   * @param mode el modo de política (BALANCED o PRIORITIZED).
+   */
   public Policy(PolicyMode mode) {
     this.mode = mode;
     this.conflictConfirmed = 0;
@@ -67,6 +107,14 @@ public class Policy {
     this.agentCycle = 0;
   }
 
+  /**
+   * Evalúa si una transición puede dispararse según la política actual.
+   *
+   * @param transition       la transición a evaluar.
+   * @param currentlyEnabled las transiciones actualmente habilitadas.
+   * @return una instancia de {@code PolicyDecision} que indica si la transición
+   *         puede dispararse y cómo se resolvió cualquier conflicto.
+   */
   public PolicyDecision evaluate(int transition,
       List<Integer> currentlyEnabled) {
     ConflictGroup group = groupForTransition(transition);
@@ -92,19 +140,42 @@ public class Policy {
         selectedTransition, true);
   }
 
-  // ---------------- BALANCED ----------------
+  /**
+   * Selecciona una transición de agente (T2 o T3) de manera balanceada,
+   * alternando
+   * entre la transición superior (T2) e inferior (T3) en cada selección.
+   *
+   * @return la transición seleccionada (2 para superior, 3 para inferior) según
+   *         el patrón de balanceo definido.
+   */
   private int selectBalancedAgent() {
     lastAgentWasSuperior = !lastAgentWasSuperior;
     return lastAgentWasSuperior ? 3 : 2;
   }
 
+  /**
+   * Selecciona una transición de reserva (T6 o T7) de manera balanceada,
+   * alternando
+   * entre la transición de reserva confirmada (T6) y cancelada (T7) en cada
+   * selección.
+   *
+   * @return la transición seleccionada (6 para confirmada, 7 para cancelada)
+   *         según el patrón de balanceo definido.
+   */
   private int selectBalancedReservation() {
     lastReservationWasConfirmed = !lastReservationWasConfirmed;
     return lastReservationWasConfirmed ? 6 : 7;
   }
 
+  /**
+   * Selecciona una transición de reserva (T6 o T7) con prioridad, eligiendo la
+   * transición de reserva confirmada (T6) en 4 de cada 5 selecciones, y la
+   * transición de reserva cancelada (T7) en 1 de cada 5 selecciones.
+   *
+   * @return la transición seleccionada (6 para confirmada, 7 para cancelada)
+   *         según el patrón de prioridad definido.
+   */
   private int selectPrioritizedReservation() {
-
     reservationCycle = (reservationCycle + 1) % 5;
 
     if (reservationCycle < 4) {
@@ -114,16 +185,32 @@ public class Policy {
     }
   }
 
+  /**
+   * Selecciona una transición de agente (T2 o T3) con prioridad, eligiendo la
+   * transición superior (T2) en 3 de cada 4 selecciones, y la transición inferior
+   * (T3) en 1 de cada 4 selecciones.
+   *
+   * @return la transición seleccionada (2 para superior, 3 para inferior) según
+   *         el patrón de prioridad definido.
+   */
   private int selectPrioritizedAgent() {
     agentCycle = (agentCycle + 1) % 4;
 
     if (agentCycle < 3) {
-      return T2; // superior
+      return 2; // superior
     } else {
-      return T3; // inferior
+      return 3; // inferior
     }
   }
 
+  /**
+   * Registra el disparo real de una transición, actualizando los contadores
+   * globales para agentes y reservas según corresponda, y también registra la
+   * decisión de política tomada en un contexto de conflicto activo si la
+   * transición disparada coincide con una selección sticky activa.
+   *
+   * @param transition la transición que se ha disparado.
+   */
   public synchronized void onTransitionFired(int transition) {
     recordRealFire(transition);
     recordAndClearStickyConflictDecisionIfNeeded(transition);
@@ -141,29 +228,62 @@ public class Policy {
     }
   }
 
+  /**
+   * Registra la decisión de política tomada en un contexto de conflicto activo,
+   * actualizando los contadores correspondientes según la transición que se
+   * disparó.
+   * <p>
+   * Esta función se llama cuando una transición que fue seleccionada como
+   * "sticky" se dispara, lo que indica que la política tomó una decisión en un
+   * contexto de conflicto activo.
+   * 
+   * @param chosenTransition la transición que se disparó y que fue seleccionada
+   *                         como "sticky" por la política, utilizada para
+   *                         actualizar los contadores de acuerdo a si es un
+   *                         disparo de agente superior, agente inferior, reserva
+   *                         confirmada o reserva cancelada en un contexto de
+   *                         conflicto.
+   */
   private void recordConflictDecision(int chosenTransition) {
     switch (chosenTransition) {
-      case T2 -> conflictAgentSuperior++;
-      case T3 -> conflictAgentInferior++;
-      case T6 -> conflictConfirmed++;
-      case T7 -> conflictCancelled++;
+      case 2 -> conflictAgentSuperior++;
+      case 3 -> conflictAgentInferior++;
+      case 6 -> conflictConfirmed++;
+      case 7 -> conflictCancelled++;
       default -> {
       }
     }
   }
 
-  // ---------------- REGISTRO REAL ----------------
+  /**
+   * Registra el disparo real de una transición, actualizando los contadores
+   * globales para agentes y reservas según corresponda.
+   * 
+   * @param transition la transición que se ha disparado, utilizada para
+   *                   actualizar los contadores de acuerdo a si es un disparo de
+   *                   agente superior, agente inferior, reserva confirmada o
+   *                   reserva cancelada.
+   */
   private void recordRealFire(int transition) {
     switch (transition) {
-      case T2 -> agentSuperiorCount++;
-      case T3 -> agentInferiorCount++;
-      case T6 -> confirmedReservations++;
-      case T7 -> cancelledReservations++;
+      case 2 -> agentSuperiorCount++;
+      case 3 -> agentInferiorCount++;
+      case 6 -> confirmedReservations++;
+      case 7 -> cancelledReservations++;
       default -> {
       }
     }
   }
 
+  /**
+   * Selecciona una transición para disparar dentro del grupo de conflicto
+   * especificado, según la política de balanceo o prioridad definida.
+   * 
+   * @param group el grupo de conflicto para el cual se desea seleccionar una
+   *              transición (AGENTS o RESERVATIONS).
+   * @return la transición seleccionada por la política para el grupo de conflicto
+   *         especificado.
+   */
   private int selectForGroup(ConflictGroup group) {
     return switch (group) {
       case AGENTS ->
@@ -176,25 +296,56 @@ public class Policy {
     };
   }
 
+  /**
+   * Determina a qué grupo de conflicto pertenece la transición dada, si es que
+   * pertenece a alguno.
+   * 
+   * @param transition la transición para la cual se desea determinar el grupo de
+   *                   conflicto.
+   * @return el grupo de conflicto al que pertenece la transición dada (AGENTS,
+   *         RESERVATIONS o NONE).
+   */
   private ConflictGroup groupForTransition(int transition) {
     return switch (transition) {
-      case T2, T3 -> ConflictGroup.AGENTS;
-      case T6, T7 -> ConflictGroup.RESERVATIONS;
+      case 2, 3 -> ConflictGroup.AGENTS;
+      case 6, 7 -> ConflictGroup.RESERVATIONS;
       default -> ConflictGroup.NONE;
     };
   }
 
+  /**
+   * Determina si el conflicto para el grupo dado está activo, es decir, si ambas
+   * transiciones en conflicto están habilitadas en la lista de candidatos actual.
+   * 
+   * @param group            el grupo de conflicto para el cual se desea verificar
+   *                         si el conflicto está activo (AGENTS o RESERVATIONS).
+   * @param currentlyEnabled la lista de transiciones actualmente habilitadas
+   *                         (candidatos) en el monitor de disparo.
+   * @return true si el conflicto para el grupo especificado está activo (ambas
+   *         transiciones en conflicto están habilitadas), o false si no hay
+   *         conflicto activo para ese grupo.
+   */
   private boolean isConflictActive(ConflictGroup group,
       List<Integer> currentlyEnabled) {
     return switch (group) {
       case AGENTS ->
-        currentlyEnabled.contains(T2) && currentlyEnabled.contains(T3);
+        currentlyEnabled.contains(2) && currentlyEnabled.contains(3);
       case RESERVATIONS ->
-        currentlyEnabled.contains(T6) && currentlyEnabled.contains(T7);
+        currentlyEnabled.contains(6) && currentlyEnabled.contains(7);
       case NONE -> false;
     };
   }
 
+  /**
+   * Obtiene la selección "sticky" actual para el grupo de conflicto dado, si
+   * existe.
+   * 
+   * @param group el grupo de conflicto para el cual se desea obtener la selección
+   *              sticky (AGENTS o RESERVATIONS).
+   * @return la transición seleccionada actualmente como sticky para el grupo
+   *         especificado, o -1 si no hay ninguna selección sticky activa para ese
+   *         grupo.
+   */
   private int getStickySelection(ConflictGroup group) {
     return switch (group) {
       case AGENTS -> forcedAgentTransition;
@@ -203,6 +354,18 @@ public class Policy {
     };
   }
 
+  /**
+   * Establece una selección "sticky" para el grupo de conflicto dado.
+   * <p>
+   * Esta selección se mantendrá hasta que una de las transiciones en conflicto se
+   * dispare, momento en el cual se registrará la decisión de política y se
+   * limpiará la selección sticky.
+   * 
+   * @param group      el grupo de conflicto para el cual se establece la
+   *                   selección sticky (AGENTS o RESERVATIONS).
+   * @param transition la transición seleccionada que se mantendrá como sticky
+   *                   para el grupo especificado.
+   */
   private void setStickySelection(ConflictGroup group, int transition) {
     switch (group) {
       case AGENTS -> forcedAgentTransition = transition;
@@ -212,10 +375,21 @@ public class Policy {
     }
   }
 
-  public synchronized int choose(List<Integer> candidates) {
+  /**
+   * Selecciona una transición de la lista de candidatos según la política
+   * definida.
+   * <p>
+   * Si hay un conflicto activo (ambas transiciones habilitadas), se selecciona
+   * según la política de balanceo o prioridad. Si no hay conflicto, se devuelve
+   * el primer candidato.
+   * 
+   * @param candidates la lista de transiciones habilitadas actualmente.
+   * @return la transición seleccionada por la política para disparar.
+   * @throws IllegalArgumentException si la lista de candidatos es nula o vacía.
+   */
+  public synchronized int choose(List<Integer> candidates) throws IllegalArgumentException {
     if (candidates == null || candidates.isEmpty()) {
-      throw new IllegalArgumentException(
-          "Candidates list cannot be null or empty");
+      throw new IllegalArgumentException("Candidates list cannot be null or empty");
     }
 
     if (isConflictActive(ConflictGroup.AGENTS, candidates)) {
@@ -233,7 +407,14 @@ public class Policy {
     return candidates.get(0);
   }
 
-  // ---------------- STATS ----------------
+  /**
+   * Imprime un resumen detallado de los resultados de la ejecución, incluyendo el
+   * total de disparos, la cantidad de disparos en conflicto, la distribución de
+   * disparos entre las transiciones superiores e inferiores, y los porcentajes
+   * correspondientes tanto para los casos en conflicto como para el total global.
+   * También muestra el total real de disparos registrados para agentes y
+   * reservas.
+   */
   public synchronized void printSummary() {
     int totalAgents = agentInferiorCount + agentSuperiorCount;
     int totalConflictAgents = conflictAgentInferior + conflictAgentSuperior;
@@ -318,7 +499,7 @@ public class Policy {
         .append(confirmedReservations + cancelledReservations)
         .append(System.lineSeparator());
 
-    System.out.print(summary.toString());
+    System.out.print(summary);
   }
 
   public void debugTotals() {

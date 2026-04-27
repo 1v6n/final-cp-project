@@ -7,15 +7,14 @@ import java.util.concurrent.Semaphore;
 
 /**
  * Administra colas de espera por transición y su contabilidad asociada.
- *
- * <p>Cada transición posee un semáforo dedicado para bloquear/despertar hilos.
+ * <p>
+ * Cada transición posee un semáforo dedicado para bloquear/despertar hilos.
  * Además, se mantiene un contador de espera por transición para decidir
  * liberaciones de forma consistente.
  */
 public class Queues {
     private final List<Semaphore> Queues;
     private final int numQueues;
-    // Cantidad de hilos esperando por transición.
     private final DMatrixRMaj waitingCount;
 
     /**
@@ -38,11 +37,11 @@ public class Queues {
     }
 
     /**
-     * Calcula el estado actual de los permisos disponibles en cada cola y devuelve una matriz que
-     * representa estos estados.
+     * Calcula el estado actual de los permisos disponibles en cada cola y devuelve
+     * una matriz que representa estos estados.
      *
-     * @return una matriz de una fila con permisos disponibles por semáforo
-     *         asociado a cada transición.
+     * @return una matriz de una fila con permisos disponibles por semáforo asociado
+     *         a cada transición.
      */
     public DMatrixRMaj queuesEstan() {
         double[] queues = new double[this.numQueues];
@@ -50,6 +49,7 @@ public class Queues {
         for (int i = 0; i < numQueues; i++) {
             queues[i] = Queues.get(i).availablePermits();
         }
+        
         return new DMatrixRMaj(1, queues.length, true, queues);
     }
 
@@ -80,7 +80,6 @@ public class Queues {
         double current = waitingCount.get(0, transition);
         waitingCount.set(0, transition, Math.max(0, current - 1));
     }
-
 
     /**
      * Devuelve el semáforo asociado a una transición.

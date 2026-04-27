@@ -6,7 +6,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Worker ejecutor de secuencias de transiciones sobre el monitor.
- *
  * <p>
  * Cada hilo queda asociado a un camino fijo de la red. Segun su configuracion,
  * completar ese camino puede o no contar como una invariante completada.
@@ -22,14 +21,15 @@ public class Threads implements Runnable {
   /**
    * Construye un worker de ejecucion de transiciones.
    *
-   * @param path secuencia fija de transiciones a ejecutar por este hilo.
-   * @param monitor monitor usado para disparar transiciones.
+   * @param path                secuencia fija de transiciones a ejecutar por este
+   *                            hilo.
+   * @param monitor             monitor usado para disparar transiciones.
    * @param completedInvariants contador global de invariantes completados.
-   * @param totalInvariants objetivo total de invariantes.
-   * @param countsCompletion {@code true} si completar el camino debe acreditar
-   *        una invariante finalizada.
-   * @param running bandera global de ejecucion/paro compartida por todos los
-   *        workers.
+   * @param totalInvariants     objetivo total de invariantes.
+   * @param countsCompletion    {@code true} si completar el camino debe acreditar
+   *                            una invariante finalizada.
+   * @param running             bandera global de ejecucion/paro compartida por
+   *                            todos los workers.
    */
   public Threads(List<Integer> path,
       MonitorInterface monitor,
@@ -47,7 +47,6 @@ public class Threads implements Runnable {
 
   /**
    * Ejecuta el ciclo principal del hilo segun su camino configurado.
-   *
    * <p>
    * El worker intenta recorrer siempre la misma secuencia de transiciones. Si
    * logra completar toda la secuencia y su rol lo requiere, reclama
@@ -104,10 +103,7 @@ public class Threads implements Runnable {
         running.set(false);
       }
 
-      int remaining = totalInvariants - completed;
-      System.out.printf(
-          "Thread %s: Completed one invariant. Remaining: %d.%n",
-          Thread.currentThread().getName(), remaining);
+      // Progress is now displayed by the progress bar in Main
     }
 
     System.out.printf(

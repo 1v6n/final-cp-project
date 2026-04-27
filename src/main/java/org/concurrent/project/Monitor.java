@@ -1,28 +1,26 @@
 package org.concurrent.project;
 
 import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Semaphore;
 import org.concurrent.project.Policy.PolicyMode;
-import org.concurrent.project.TimeRestrictions.FireEvaluation;
 import org.ejml.data.DMatrixRMaj;
 import org.ejml.dense.row.CommonOps_DDRM;
 
 /**
+ * Monitor de exclusión mutua para control concurrente de una Red de Petri.
+ * <p>
  * Coordina el disparo concurrente de transiciones de la RdP mediante exclusión
  * mutua.
- *
  * <p>
  * Este monitor centraliza tres responsabilidades: serializar acceso al marcado,
  * aplicar restricciones temporales de semántica débil y despertar hilos en
- * espera
- * cuando una transición vuelve a estar habilitada para disparo.
+ * espera cuando una transición vuelve a estar habilitada para disparo.
  */
 public class Monitor implements MonitorInterface {
   private static final long INFINITE_BETA_MS = TimeRestrictions.INFINITE_BETA;
   /** Configuración base de transiciones temporizadas: {transition, alphaMs}. */
   private static final int[][] TIMED_TRANSITIONS_BASE_MS = {
-      { 1, 130 }, { 4, 70 }, { 5, 70 }, { 8, 100 }, { 9, 50 }, { 10, 50 } };
+      { 1, 100 }, { 4, 60 }, { 5, 60 }, { 8, 80 }, { 9, 40 }, { 10, 40 } };
 
   private enum TransitionStep {
     FIRED,
@@ -34,22 +32,20 @@ public class Monitor implements MonitorInterface {
   private final Queues Queues;
   private final RdP rdp;
   private final Policy policy;
-  private final CopyOnWriteArrayList<String> successfullyFired;
   private final TimeRestrictions time;
   private final LogService log;
   private final List<Invariants.PInvariant> pInvariants = Invariants.defaultPInvariants();
 
   /**
    * Construye el monitor y configura transiciones temporizadas opcionales.
-   *
    * <p>
    * Inicializa semáforo de entrada, colas de espera y utilidades de tiempo.
-   * Si {@code timed} es {@code true}, registra las transiciones temporizadas
-   * definidas para esta simulación y libera hilos de instancias recién
-   * habilitadas.
    *
    * @param rdp   red de Petri controlada por el monitor.
    * @param timed indica si se habilitan restricciones temporales.
+   * @param log   servicio de logging para eventos de disparo.
+   * @param mode  modo de política para selección de transición a despertar entre
+   *              múltiples habilitadas.
    */
   Monitor(RdP rdp, boolean timed, LogService log, PolicyMode mode) {
     entry = new Semaphore(1, true);
@@ -57,7 +53,6 @@ public class Monitor implements MonitorInterface {
     this.log = log;
     Queues = new Queues();
     policy = new Policy(mode);
-    successfullyFired = new CopyOnWriteArrayList<>();
     time = new TimeRestrictions();
 
     configureTimedTransitions(timed);
@@ -65,7 +60,6 @@ public class Monitor implements MonitorInterface {
 
   /**
    * Aplica configuración temporal inicial en forma declarativa.
-   *
    * <p>
    * Si el modo temporizado está activo, registra cada transición con ETF
    * (alpha) y beta infinito, y sincroniza estado temporal inicial con la
@@ -88,7 +82,6 @@ public class Monitor implements MonitorInterface {
   /**
    * Intenta disparar una transición bajo exclusión mutua y semántica temporal
    * débil.
-   *
    * <p>
    * Valida índice, toma el monitor, refresca estado de sensibilización temporal
    * y evalúa si el disparo está permitido. Si la transición no puede dispararse
@@ -107,6 +100,7 @@ public class Monitor implements MonitorInterface {
 
     while (true) {
       boolean monitorHeld = false;
+
       try {
         catchMonitor();
         monitorHeld = true;
@@ -114,6 +108,7 @@ public class Monitor implements MonitorInterface {
 
         if (isSensitized) {
           TransitionStep step;
+
           try {
             step = handleSensitizedTransition(transition);
           } catch (InterruptedException e) {
@@ -129,12 +124,15 @@ public class Monitor implements MonitorInterface {
           }
           continue;
         }
+
         monitorHeld = false;
         waitForSensitization(transition);
         continue;
+
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();
         return false;
+
       } finally {
         if (monitorHeld) {
           releaseMonitor();
@@ -151,19 +149,11 @@ public class Monitor implements MonitorInterface {
    * @return próximo paso de control para el ciclo principal.
    * @throws InterruptedException si el hilo es interrumpido durante una espera.
    */
-  private TransitionStep handleSensitizedTransition(int transition)
-      throws InterruptedException {
-
+  private TransitionStep handleSensitizedTransition(int transition) throws InterruptedException {
     TimeRestrictions.FireEvaluation evaluation = time.evaluateFire(transition);
 
     switch (evaluation) {
-
       case ALLOWED:
-        // PolicyDecision policyDecision = policy.evaluate(transition,
-        // getPolicyEligibleTransitions()); if (!policyDecision.shouldFire()) {
-        // return TransitionStep.RETRY_MONITOR_HELD;
-        // }
-
         fireAndReleaseTransition(transition);
         policy.onTransitionFired(transition);
         return TransitionStep.FIRED;
@@ -185,7 +175,6 @@ public class Monitor implements MonitorInterface {
 
   /**
    * Espera hasta alcanzar ETF para una transición temporizada.
-   *
    * <p>
    * Libera el monitor antes de esperar y duerme una única vez por el
    * tiempo restante hacia ETF.
@@ -193,13 +182,10 @@ public class Monitor implements MonitorInterface {
    * @param transition transición en estado {@code TOO_EARLY}.
    * @throws InterruptedException si el hilo es interrumpido durante la espera.
    */
-  private void waitUntilEarliestFireTime(int transition)
-      throws InterruptedException {
-    System.out.println(
-        "T" + transition +
-            " no puede ser disparada por restricción de tiempo. Esperando...");
+  private void waitUntilEarliestFireTime(int transition) throws InterruptedException {
     long remainingMs = time.getRemainingToEarliest(transition);
     releaseMonitor();
+
     if (remainingMs > 0) {
       Thread.sleep(remainingMs);
     }
@@ -208,7 +194,6 @@ public class Monitor implements MonitorInterface {
   /**
    * Bloquea el hilo hasta que la transición vuelva a sensibilizarse y sea
    * señalada.
-   *
    * <p>
    * Incrementa contabilidad de espera, libera el monitor y aguarda en el
    * semáforo asociado a la transición.
@@ -216,18 +201,14 @@ public class Monitor implements MonitorInterface {
    * @param transition transición actualmente no sensibilizada.
    * @throws InterruptedException si el hilo es interrumpido durante la espera.
    */
-  private void waitForSensitization(int transition)
-      throws InterruptedException {
+  private void waitForSensitization(int transition) throws InterruptedException {
     Queues.incrementWaitingCount(transition);
-
     releaseMonitor();
-
     Queues.getSemaphoreForTransition(transition).acquire();
   }
 
   /**
    * Adquiere el monitor de exclusión mutua de la red.
-   *
    * <p>
    * Serializa el acceso a estado compartido de RdP y estructuras auxiliares,
    * para que evaluación temporal y disparo sean atómicos frente a otros hilos.
@@ -240,9 +221,11 @@ public class Monitor implements MonitorInterface {
 
   /**
    * Libera el monitor de exclusión mutua.
-   *
    * <p>
    * Permite que otros hilos en espera ingresen al ciclo de evaluación/disparo.
+   * 
+   * @throws IllegalStateException si el semáforo queda con más de un permiso tras
+   *                               la liberación.
    */
   private void releaseMonitor() {
     entry.release();
@@ -272,7 +255,6 @@ public class Monitor implements MonitorInterface {
 
   /**
    * Dispara la transición y actualiza estructuras de sensibilización/colas.
-   *
    * <p>
    * Construye vector de disparo, ejecuta disparo en RdP, refresca temporización
    * para nueva instancia habilitada, libera esperas relevantes y registra
@@ -285,34 +267,26 @@ public class Monitor implements MonitorInterface {
     DMatrixRMaj firingVector = createFiringVector(transition);
     rdp.fireTransition(firingVector, transition);
     time.updateFromSensitized(rdp.getSensitized());
-    time.onTransitionFired(transition,
-        rdp.getSensitized().get(0, transition) == 1);
+    time.onTransitionFired(transition, rdp.getSensitized().get(0, transition) == 1);
     updateSensitizedAndRelease();
-    successfullyFired.add("T" + transition);
-    printSuccessfullyFired();
-    System.out.println("Transition " + transition + " fired successfully by " +
-        Thread.currentThread().getName());
 
     if (log != null) {
       DMatrixRMaj markingMatrix = rdp.getMarcadoActual();
       List<Invariants.PInvariantResult> results = Invariants.checkPInvariants(markingMatrix, pInvariants);
-
       String pinv = "OK";
       Invariants.PInvariantResult firstFail = null;
 
       for (Invariants.PInvariantResult r : results) {
         if (!r.ok()) {
           firstFail = r;
-          pinv = "FAIL(" + r.name() + ",got=" + r.got() +
-              ",exp=" + r.expected() + ")";
+          pinv = "FAIL(" + r.name() + ",got=" + r.got() + ",exp=" + r.expected() + ")";
           break;
         }
       }
 
       if (firstFail != null) {
         log.logEvent(Thread.currentThread().getName(),
-            "PINV_FAIL name=" + firstFail.name() + " got=" +
-                firstFail.got() + " exp=" + firstFail.expected());
+            "PINV_FAIL name=" + firstFail.name() + " got=" + firstFail.got() + " exp=" + firstFail.expected());
       }
 
       log.logFire(Thread.currentThread().getName(), transition, true,
@@ -320,6 +294,14 @@ public class Monitor implements MonitorInterface {
     }
   }
 
+  /**
+   * Toma una instantánea del marcado actual de la RdP.
+   * <p>
+   * Convierte la matriz de marcado de EJML a un arreglo de enteros para
+   * facilitar su registro en el log.
+   * 
+   * @return arreglo de enteros representando el marcado actual.
+   */
   private int[] snapshotMarking() {
     DMatrixRMaj m = rdp.getMarcadoActual(); // 1xP
     int[] out = new int[m.numCols];
@@ -329,20 +311,7 @@ public class Monitor implements MonitorInterface {
   }
 
   /**
-   * Imprime un resumen del total de transiciones disparadas exitosamente.
-   *
-   * <p>
-   * Se informa únicamente el conteo acumulado para reducir trazas en
-   * ejecuciones largas.
-   */
-  private void printSuccessfullyFired() {
-    System.out.println("Successfully fired transitions count: " +
-        successfullyFired.size());
-  }
-
-  /**
    * Crea el vector de disparo unitario para una transición.
-   *
    * <p>
    * El vector contiene un único valor 1 en la posición de la transición y 0
    * en el resto de posiciones.
@@ -358,7 +327,6 @@ public class Monitor implements MonitorInterface {
 
   /**
    * Libera esperas de transiciones sensibilizadas con filtrado de política.
-   *
    * <p>
    * Construye candidatas de wake-up como transiciones estructuralmente
    * sensibilizadas y con al menos un hilo esperando. Levanta todos los un
@@ -366,13 +334,11 @@ public class Monitor implements MonitorInterface {
    */
   private void updateSensitizedAndRelease() {
     List<Integer> wakeEligibleTransitions = getWakeEligibleTransitions();
-
     if (wakeEligibleTransitions.isEmpty()) {
       return;
     }
 
     int selectedTransition = policy.choose(wakeEligibleTransitions);
-
     if (selectedTransition == -1) {
       return;
     }
@@ -382,43 +348,31 @@ public class Monitor implements MonitorInterface {
       Queues.decrementWaitingCount(selectedTransition);
       Queues.getSemaphoreForTransition(selectedTransition).release();
     }
-    /*
-     * DMatrixRMaj waiting = Queues.getWaitingCounts();
-     * for (int transition : wakeEligibleTransitions) {
-     * if (waiting.get(0, transition) > 0) {
-     * Queues.decrementWaitingCount(transition);
-     * Queues.getSemaphoreForTransition(transition).release();
-     * }
-     * }
-     */
   }
 
+  /**
+   * Imprime un resumen de la política de despertar.
+   */
   public void printPolicySummary() {
     policy.printSummary();
   }
 
-  private boolean isTransitionAllowed(int t) {
-    return rdp.getSensitized().get(0, t) == 1 &&
-        time.evaluateFire(t) == FireEvaluation.ALLOWED;
-  }
-
-  private List<Integer> getPolicyEligibleTransitions() {
-    List<Integer> enabled = new java.util.ArrayList<>();
-    int totalTransitions = rdp.getIncidencia().numCols;
-    for (int t = 0; t < totalTransitions; t++) {
-      if (isTransitionAllowed(t)) {
-        enabled.add(t);
-      }
-    }
-    return enabled;
-  }
-
+  /**
+   * Determina qué transiciones son elegibles para despertar hilos en espera.
+   * <p>
+   * Una transición es elegible si está estructuralmente sensibilizada (según
+   * la matriz de sensibilización de RdP) y tiene al menos un hilo esperando en
+   * su semáforo. Construye una lista de índices de transiciones que cumplen ambos
+   * criterios para que la política pueda seleccionar entre ellas.
+   *
+   * @return lista de índices de transiciones elegibles para despertar.
+   */
   private List<Integer> getWakeEligibleTransitions() {
     List<Integer> wakeEligible = new java.util.ArrayList<>();
     DMatrixRMaj sensitized = rdp.getSensitized();
     DMatrixRMaj waiting = Queues.getWaitingCounts();
-
     DMatrixRMaj waitingMask = new DMatrixRMaj(1, waiting.numCols);
+
     for (int t = 0; t < waiting.numCols; t++) {
       waitingMask.set(0, t, waiting.get(0, t) > 0 ? 1.0 : 0.0);
     }
@@ -431,6 +385,7 @@ public class Monitor implements MonitorInterface {
         wakeEligible.add(t);
       }
     }
+
     return wakeEligible;
   }
 }

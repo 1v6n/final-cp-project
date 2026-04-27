@@ -4,16 +4,34 @@ import java.util.ArrayList;
 import java.util.List;
 import org.ejml.data.DMatrixRMaj;
 
+/**
+ * Clase utilitaria para definir y verificar invariantes de plaza
+ * (P-invariantes) en la red de Petri.
+ */
 public final class Invariants {
-
   private Invariants() {
   }
 
+  /**
+   * Representa un P-invariante en la red de Petri.
+   * <p>
+   * Un P-invariante es una propiedad estructural de la red de Petri que debe
+   * mantenerse
+   * durante toda la ejecución del sistema.
+   */
   public static final class PInvariant {
     public final String name;
     public final int[] places;
     public final int expected;
 
+    /**
+     * Crea un nuevo P-invariante con el nombre, las plazas involucradas y el valor
+     * esperado.
+     * 
+     * @param name     Nombre del invariante.
+     * @param places   Arreglo de plazas involucradas.
+     * @param expected Valor esperado del invariante.
+     */
     public PInvariant(String name, int[] places, int expected) {
       this.name = name;
       this.places = places;
@@ -23,7 +41,6 @@ public final class Invariants {
 
   /**
    * Resultado del chequeo de un P-invariante.
-   *
    * <p>
    * Este record encapsula toda la información relevante del análisis de un
    * invariante sobre un marcado específico, permitiendo su posterior registro
@@ -39,7 +56,6 @@ public final class Invariants {
 
   /**
    * Devuelve el conjunto de P-invariantes definidos para el modelo actual.
-   *
    * <p>
    * Estos invariantes fueron obtenidos a partir del análisis estructural de la
    * red de Petri y representan restricciones que deben mantenerse a lo largo
@@ -50,11 +66,9 @@ public final class Invariants {
 
   public static List<PInvariant> defaultPInvariants() {
     return List.of(
-
         new PInvariant("P1+P2=1", new int[] { 1, 2 }, 1),
         new PInvariant("P10+P11+P12+P13=1", new int[] { 10, 11, 12, 13 }, 1),
-        new PInvariant("Global=5", new int[] { 0, 11, 12, 13, 14, 2, 3, 5, 8, 9 },
-            5),
+        new PInvariant("Global=5", new int[] { 0, 11, 12, 13, 14, 2, 3, 5, 8, 9 }, 5),
         new PInvariant("P2+P3+P4=5", new int[] { 2, 3, 4 }, 5),
         new PInvariant("P5+P6=1", new int[] { 5, 6 }, 1),
         new PInvariant("P7+P8=1", new int[] { 7, 8 }, 1));
@@ -63,12 +77,10 @@ public final class Invariants {
   /**
    * Verifica el cumplimiento de un conjunto de P-invariantes sobre un marcado
    * específico de la red de Petri.
-   *
    * <p>
    * Para cada invariante, se calcula la suma de tokens en las plazas indicadas
    * y se compara con el valor esperado definido. El resultado de cada chequeo
    * se devuelve de forma independiente.
-   *
    * <p>
    * Este método no genera efectos colaterales ni altera el estado del sistema.
    *
@@ -89,6 +101,7 @@ public final class Invariants {
       boolean ok = (sum == inv.expected);
       out.add(new PInvariantResult(inv.name, ok, sum, inv.expected));
     }
+
     return out;
   }
 }
