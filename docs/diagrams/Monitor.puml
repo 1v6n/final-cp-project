@@ -1,16 +1,16 @@
 @startuml
-title Monitor
+title Monitor + Política
 
 autonumber
 
 actor "Worker" as W
 participant "Monitor" as M
+participant "Policy" as Pol
 participant "TimeRestrictions" as T
 participant "RdP" as R
 participant "Queues" as Q
 
 W -> M : fireTransition(t)
-M -> M : validateTransitionIndex(t)
 
 loop until fired or interrupted
   M -> M : catchMonitor()
@@ -29,9 +29,26 @@ loop until fired or interrupted
     alt ALLOWED
       M -> M : fireAndReleaseTransition(t)
       M -> R : fireTransition(firingVector, t)
+      
+      note over Pol: Actualiza contadores globales
+      M -> Pol : onTransitionFired(t)
+      
       M -> T : updateFromSensitized(getSensitized())
-      M -> T : onTransitionFired(t, stillSensitized)
-      M -> M : updateSensitizedAndRelease()
+      
+      group updateSensitizedAndRelease
+        M -> R : getSensitized()
+        M -> Q : getWaitingCounts()
+        M -> M : getWakeEligibleTransitions()
+        
+        M -> Pol : choose(wakeEligibleTransitions)
+        Pol --> M : selectedTransition
+        
+        alt selectedTransition != -1
+            M -> Q : decrementWaitingCount(selectedTransition)
+            M -> Q : release(sem[selectedTransition])
+        end
+      end
+      
       M -> M : releaseMonitor()
       M --> W : true
       break
@@ -42,9 +59,8 @@ loop until fired or interrupted
       M -> M : releaseMonitor()
       M -> M : Thread.sleep(remainingMs)
 
-    else NOT_ENABLED (invalid state)
+    else NOT_ENABLED
       M -> M : throw IllegalStateException
-      M --> W : exception
       break
     end
   end
