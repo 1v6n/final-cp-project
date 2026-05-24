@@ -30,27 +30,10 @@ public class Queues {
     /**
      * Inicializa los semáforos internos con cero permisos.
      */
-    public void initializeSemaphores() {
+    private void initializeSemaphores() {
         for (int i = 0; i < numQueues; i++) {
             Queues.add(createSemaphore());
         }
-    }
-
-    /**
-     * Calcula el estado actual de los permisos disponibles en cada cola y devuelve
-     * una matriz que representa estos estados.
-     *
-     * @return una matriz de una fila con permisos disponibles por semáforo asociado
-     *         a cada transición.
-     */
-    public DMatrixRMaj queuesEstan() {
-        double[] queues = new double[this.numQueues];
-
-        for (int i = 0; i < numQueues; i++) {
-            queues[i] = Queues.get(i).availablePermits();
-        }
-        
-        return new DMatrixRMaj(1, queues.length, true, queues);
     }
 
     /**
@@ -93,14 +76,5 @@ public class Queues {
 
     private Semaphore createSemaphore() {
         return new Semaphore(0);
-    }
-
-    /**
-     * Devuelve la lista completa de semáforos de cola.
-     *
-     * @return lista de semáforos internos por transición.
-     */
-    public List<Semaphore> getQueues() {
-        return Queues;
     }
 }

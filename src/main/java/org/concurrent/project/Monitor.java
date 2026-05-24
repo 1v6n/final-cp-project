@@ -24,12 +24,11 @@ public class Monitor implements MonitorInterface {
 
   private enum TransitionStep {
     FIRED,
-    RETRY_MONITOR_RELEASED,
-    RETRY_MONITOR_HELD
+    RETRY_MONITOR_RELEASED
   }
 
   private final Semaphore entry;
-  private final Queues Queues;
+  private final Queues queues;
   private final RdP rdp;
   private final Policy policy;
   private final TimeRestrictions time;
@@ -51,7 +50,7 @@ public class Monitor implements MonitorInterface {
     entry = new Semaphore(1, true);
     this.rdp = rdp;
     this.log = log;
-    Queues = new Queues();
+    queues = new Queues();
     policy = new Policy(mode);
     time = new TimeRestrictions();
 
@@ -202,9 +201,9 @@ public class Monitor implements MonitorInterface {
    * @throws InterruptedException si el hilo es interrumpido durante la espera.
    */
   private void waitForSensitization(int transition) throws InterruptedException {
-    Queues.incrementWaitingCount(transition);
+    queues.incrementWaitingCount(transition);
     releaseMonitor();
-    Queues.getSemaphoreForTransition(transition).acquire();
+    queues.getSemaphoreForTransition(transition).acquire();
   }
 
   /**
@@ -265,7 +264,7 @@ public class Monitor implements MonitorInterface {
    */
   private void fireAndReleaseTransition(int transition) {
     DMatrixRMaj firingVector = createFiringVector(transition);
-    rdp.fireTransition(firingVector, transition);
+    rdp.fireTransition(firingVector);
     time.updateFromSensitized(rdp.getSensitized());
     time.onTransitionFired(transition, rdp.getSensitized().get(0, transition) == 1);
     updateSensitizedAndRelease();
@@ -343,10 +342,10 @@ public class Monitor implements MonitorInterface {
       return;
     }
 
-    DMatrixRMaj waiting = Queues.getWaitingCounts();
+    DMatrixRMaj waiting = queues.getWaitingCounts();
     if (waiting.get(0, selectedTransition) > 0) {
-      Queues.decrementWaitingCount(selectedTransition);
-      Queues.getSemaphoreForTransition(selectedTransition).release();
+      queues.decrementWaitingCount(selectedTransition);
+      queues.getSemaphoreForTransition(selectedTransition).release();
     }
   }
 
@@ -370,18 +369,13 @@ public class Monitor implements MonitorInterface {
   private List<Integer> getWakeEligibleTransitions() {
     List<Integer> wakeEligible = new java.util.ArrayList<>();
     DMatrixRMaj sensitized = rdp.getSensitized();
-    DMatrixRMaj waiting = Queues.getWaitingCounts();
-    DMatrixRMaj waitingMask = new DMatrixRMaj(1, waiting.numCols);
+    DMatrixRMaj waiting = queues.getWaitingCounts();
 
-    for (int t = 0; t < waiting.numCols; t++) {
-      waitingMask.set(0, t, waiting.get(0, t) > 0 ? 1.0 : 0.0);
-    }
+    for (int t = 0; t < sensitized.numCols; t++) {
+      boolean isSensitized = (sensitized.get(0, t) == 1.0);
+      boolean hasThreadsWaiting = (waiting.get(0, t) > 0);
 
-    DMatrixRMaj eligibleMask = new DMatrixRMaj(1, sensitized.numCols);
-    CommonOps_DDRM.elementMult(sensitized, waitingMask, eligibleMask);
-
-    for (int t = 0; t < eligibleMask.numCols; t++) {
-      if (eligibleMask.get(0, t) == 1.0) {
+      if (isSensitized && hasThreadsWaiting) {
         wakeEligible.add(t);
       }
     }

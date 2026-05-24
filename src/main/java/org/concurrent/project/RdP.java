@@ -70,10 +70,9 @@ public class RdP {
      * recalcula las transiciones sensibilizadas.
      *
      * @param firingVector vector de disparo a aplicar.
-     * @param transition   índice de transición a disparar.
      * @throws IllegalArgumentException si el vector no cumple el formato esperado.
      */
-    public void fireTransition(DMatrixRMaj firingVector, int transition) throws IllegalArgumentException {
+    public void fireTransition(DMatrixRMaj firingVector) throws IllegalArgumentException {
         if (firingVector.numCols != 1 || firingVector.numRows != Incidencia.numCols) {
             throw new IllegalArgumentException(
                     "El vector de disparo debe tener 1 columna y " + Incidencia.numCols + " filas.");
@@ -121,18 +120,6 @@ public class RdP {
                 }
             }
             Sensibilizadas.set(0, t, puedeDisparar ? 1 : 0);
-        }
-    }
-
-    /**
-     * Imprime el marcado actual en formato fila.
-     */
-    public void printMarcadoActual() {
-        for (int i = 0; i < MarcadoActual.numRows; i++) {
-            for (int j = 0; j < MarcadoActual.numCols; j++) {
-                System.out.print(MarcadoActual.get(i, j) + " ");
-            }
-            System.out.println();
         }
     }
 
