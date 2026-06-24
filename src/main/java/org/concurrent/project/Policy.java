@@ -108,39 +108,6 @@ public class Policy {
   }
 
   /**
-   * Evalúa si una transición puede dispararse según la política actual.
-   *
-   * @param transition       la transición a evaluar.
-   * @param currentlyEnabled las transiciones actualmente habilitadas.
-   * @return una instancia de {@code PolicyDecision} que indica si la transición
-   *         puede dispararse y cómo se resolvió cualquier conflicto.
-   */
-  public PolicyDecision evaluate(int transition,
-      List<Integer> currentlyEnabled) {
-    ConflictGroup group = groupForTransition(transition);
-    if (group == ConflictGroup.NONE) {
-      return PolicyDecision.allow(transition);
-    }
-
-    int stickySelection = getStickySelection(group);
-    if (stickySelection != -1) {
-      return PolicyDecision.resolve(transition == stickySelection,
-          stickySelection,
-          isConflictActive(group, currentlyEnabled));
-    }
-
-    if (!isConflictActive(group, currentlyEnabled)) {
-      return PolicyDecision.allow(transition);
-    }
-
-    int selectedTransition = selectForGroup(group);
-    setStickySelection(group, selectedTransition);
-
-    return PolicyDecision.resolve(transition == selectedTransition,
-        selectedTransition, true);
-  }
-
-  /**
    * Selecciona una transición de agente (T2 o T3) de manera balanceada,
    * alternando
    * entre la transición superior (T2) e inferior (T3) en cada selección.
@@ -211,7 +178,7 @@ public class Policy {
    *
    * @param transition la transición que se ha disparado.
    */
-  public synchronized void onTransitionFired(int transition) {
+  public void onTransitionFired(int transition) {
     recordRealFire(transition);
     recordAndClearStickyConflictDecisionIfNeeded(transition);
   }
@@ -387,7 +354,7 @@ public class Policy {
    * @return la transición seleccionada por la política para disparar.
    * @throws IllegalArgumentException si la lista de candidatos es nula o vacía.
    */
-  public synchronized int choose(List<Integer> candidates) throws IllegalArgumentException {
+  public int choose(List<Integer> candidates) throws IllegalArgumentException {
     if (candidates == null || candidates.isEmpty()) {
       throw new IllegalArgumentException("Candidates list cannot be null or empty");
     }
@@ -415,7 +382,7 @@ public class Policy {
    * También muestra el total real de disparos registrados para agentes y
    * reservas.
    */
-  public synchronized void printSummary() {
+  public void printSummary() {
     int totalAgents = agentInferiorCount + agentSuperiorCount;
     int totalConflictAgents = conflictAgentInferior + conflictAgentSuperior;
     int forcedAgents = totalAgents - totalConflictAgents;
