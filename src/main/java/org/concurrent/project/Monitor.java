@@ -5,6 +5,7 @@ import java.util.concurrent.Semaphore;
 import org.concurrent.project.Policy.PolicyMode;
 import org.ejml.data.DMatrixRMaj;
 import org.ejml.dense.row.CommonOps_DDRM;
+import java.util.ArrayList;
 
 /**
  * Monitor de exclusión mutua para control concurrente de una Red de Petri.
@@ -382,4 +383,79 @@ public class Monitor implements MonitorInterface {
 
     return wakeEligible;
   }
+
+  /**
+   * Administra colas de espera por transición y su contabilidad asociada.
+   * <p>
+   * Cada transición posee un semáforo dedicado para bloquear/despertar hilos.
+   * Además, se mantiene un contador de espera por transición para decidir
+   * liberaciones de forma consistente.
+   */
+  private static class Queues {
+    private final List<Semaphore> queuesList;
+    private final int numQueues;
+    private final DMatrixRMaj waitingCount;
+
+    /**
+     * Construye la estructura de colas con un semáforo por transición.
+     */
+    Queues() {
+      this.numQueues = 12;
+      this.queuesList = new ArrayList<>(numQueues);
+      this.waitingCount = new DMatrixRMaj(1, numQueues);
+      initializeSemaphores();
+    }
+
+    /**
+     * Inicializa los semáforos internos con cero permisos.
+     */
+    private void initializeSemaphores() {
+      for (int i = 0; i < numQueues; i++) {
+        queuesList.add(createSemaphore());
+      }
+    }
+
+    /**
+     * Devuelve el conteo actual de hilos en espera por transición.
+     *
+     * @return matriz 1xT con cantidad de hilos esperando por transición.
+     */
+    private DMatrixRMaj getWaitingCounts() {
+      return waitingCount;
+    }
+
+    /**
+     * Incrementa el contador de espera de una transición.
+     *
+     * @param transition índice de transición.
+     */
+    private void incrementWaitingCount(int transition) {
+      waitingCount.set(0, transition, waitingCount.get(0, transition) + 1);
+    }
+
+    /**
+     * Decrementa el contador de espera de una transición sin bajar de cero.
+     *
+     * @param transition índice de transición.
+     */
+    private void decrementWaitingCount(int transition) {
+      double current = waitingCount.get(0, transition);
+      waitingCount.set(0, transition, Math.max(0, current - 1));
+    }
+
+    /**
+     * Devuelve el semáforo asociado a una transición.
+     *
+     * @param transition índice de transición.
+     * @return semáforo de la cola de esa transición.
+     */
+    private Semaphore getSemaphoreForTransition(int transition) {
+      return queuesList.get(transition);
+    }
+
+    private Semaphore createSemaphore() {
+      return new Semaphore(0);
+    }
+  }
 }
+
