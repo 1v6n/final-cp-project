@@ -12,7 +12,7 @@ import org.ejml.dense.row.CommonOps_DDRM;
  */
 public class RdP {
     private DMatrixRMaj Incidencia;
-    private DMatrixRMaj IncidenciaSalida;
+    private DMatrixRMaj IncidenciaEntradaTraspuesta;
     private DMatrixRMaj MarcadoActual;
     private DMatrixRMaj Sensibilizadas;
 
@@ -35,7 +35,7 @@ public class RdP {
             { 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, -1 },
     };
 
-    private final double[][] MatrixIncidenciaSalida = {
+    private final double[][] MatrixIncidenciaEntradaTraspuesta = {
             { 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
             { 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
             { 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0 },
@@ -56,7 +56,7 @@ public class RdP {
     public RdP() {
         this.MarcadoActual = new DMatrixRMaj(1, M0.length, true, M0);
         this.Incidencia = new DMatrixRMaj(MatrixIncidencia);
-        this.IncidenciaSalida = new DMatrixRMaj(MatrixIncidenciaSalida);
+        this.IncidenciaEntradaTraspuesta = new DMatrixRMaj(MatrixIncidenciaEntradaTraspuesta);
         this.Sensibilizadas = new DMatrixRMaj(1, Incidencia.numCols);
         this.transicionesSensibilizadas();
     }
@@ -108,13 +108,13 @@ public class RdP {
      * Actualiza el estado de sensibilización de las transiciones.
      * <p>
      * Una transición se marca como sensibilizada si todas sus plazas de entrada
-     * poseen tokens suficientes según la matriz de incidencia de salida.
+     * poseen tokens suficientes según la matriz de incidencia de entrada traspuesta.
      */
     private void transicionesSensibilizadas() {
-        for (int t = 0; t < IncidenciaSalida.numRows; t++) {
+        for (int t = 0; t < IncidenciaEntradaTraspuesta.numRows; t++) {
             boolean puedeDisparar = true;
             for (int p = 0; p < MarcadoActual.numCols; p++) {
-                if (MarcadoActual.get(0, p) < IncidenciaSalida.get(t, p)) {
+                if (MarcadoActual.get(0, p) < IncidenciaEntradaTraspuesta.get(t, p)) {
                     puedeDisparar = false;
                     break;
                 }

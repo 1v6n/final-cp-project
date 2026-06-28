@@ -14,6 +14,8 @@ import org.concurrent.project.Policy.PolicyMode;
 public class Main {
   private static final int TOTAL_RUNS = 186;
   private static final boolean timed = true;
+  /** Policy mode applied by the monitor. Change to compare behaviors. */
+  private static final PolicyMode POLICY_MODE = PolicyMode.NONE;
 
   private record WorkerSpec(String name, List<Integer> path, boolean countsCompletion) {
   }
@@ -23,7 +25,7 @@ public class Main {
 
     try (LogService logService = new LogService(logPath)) {
       RdP rdP = new RdP();
-      Monitor monitor = new Monitor(rdP, timed, logService, PolicyMode.BALANCED);
+      Monitor monitor = new Monitor(rdP, timed, logService, POLICY_MODE);
 
       long startTime = System.currentTimeMillis();
       AtomicInteger completedInvariants = new AtomicInteger(0);
@@ -33,32 +35,32 @@ public class Main {
 
       startThreads(workers);
 
-       try {
-         // Start progress bar in a separate thread
-         ProgressBar progressBar = new ProgressBar(TOTAL_RUNS, completedInvariants, 30);
-         Thread progressThread = new Thread(() -> {
-           try {
-             while (running.get() && completedInvariants.get() < TOTAL_RUNS) {
-               progressBar.update();
-               Thread.sleep(100); // Update every 100ms
-             }
-             progressBar.update(); // Final update
-           } catch (InterruptedException e) {
-             Thread.currentThread().interrupt();
-           } finally {
-             progressBar.close();
-           }
-         });
-         progressThread.setDaemon(true);
-         progressThread.start();
+      try {
+        // Start progress bar in a separate thread
+        ProgressBar progressBar = new ProgressBar(TOTAL_RUNS, completedInvariants, 30);
+        Thread progressThread = new Thread(() -> {
+          try {
+            while (running.get() && completedInvariants.get() < TOTAL_RUNS) {
+              progressBar.update();
+              Thread.sleep(100); // Update every 100ms
+            }
+            progressBar.update(); // Final update
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+          } finally {
+            progressBar.close();
+          }
+        });
+        progressThread.setDaemon(true);
+        progressThread.start();
 
-         awaitCompletion(running, completedInvariants);
-         stopThreads(running, workers);
-         joinThreads(workers);
-       } catch (InterruptedException e) {
-         stopThreads(running, workers);
-         Thread.currentThread().interrupt();
-       }
+        awaitCompletion(running, completedInvariants);
+        stopThreads(running, workers);
+        joinThreads(workers);
+      } catch (InterruptedException e) {
+        stopThreads(running, workers);
+        Thread.currentThread().interrupt();
+      }
 
       printSummary(startTime, completedInvariants, monitor);
     } catch (IOException e) {

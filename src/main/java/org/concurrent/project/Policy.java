@@ -8,7 +8,9 @@ import java.util.List;
  */
 public class Policy {
   public enum PolicyMode {
-    BALANCED, PRIORITIZED
+    NONE,
+    BALANCED,
+    PRIORITIZED
   }
 
   /**
@@ -93,7 +95,7 @@ public class Policy {
   /**
    * Crea una instancia de {@code Policy} con el modo de política especificado.
    *
-   * @param mode el modo de política (BALANCED o PRIORITIZED).
+   * @param mode el modo de política (NONE, BALANCED o PRIORITIZED).
    */
   public Policy(PolicyMode mode) {
     this.mode = mode;
@@ -105,6 +107,21 @@ public class Policy {
     this.agentSuperiorCount = 0;
     this.reservationCycle = 0;
     this.agentCycle = 0;
+  }
+
+  /**
+   * Indica si la política de selección debe aplicarse.
+   * <p>
+   * En modo {@code PolicyMode.NONE} no se aplica ninguna política propia:
+   * el monitor despierta todas las transiciones elegibles y deja que el
+   * scheduler junto con la exclusión mutua resuelvan el orden natural de
+   * ejecución. En los modos restantes, la política interviene para seleccionar
+   * qué transición despertar ante conflictos.
+   *
+   * @return {@code true} si la política está activa (BALANCED o PRIORITIZED).
+   */
+  public boolean isEnabled() {
+    return mode != PolicyMode.NONE;
   }
 
   /**
@@ -346,6 +363,9 @@ public class Policy {
    * Selecciona una transición de la lista de candidatos según la política
    * definida.
    * <p>
+   * Este método solo debe usarse cuando la política está activa. En modo
+   * {@code PolicyMode.NONE}, la estrategia de wake-up se resuelve en el monitor.
+   * <p>
    * Si hay un conflicto activo (ambas transiciones habilitadas), se selecciona
    * según la política de balanceo o prioridad. Si no hay conflicto, se devuelve
    * el primer candidato.
@@ -353,10 +373,15 @@ public class Policy {
    * @param candidates la lista de transiciones habilitadas actualmente.
    * @return la transición seleccionada por la política para disparar.
    * @throws IllegalArgumentException si la lista de candidatos es nula o vacía.
+   * @throws IllegalStateException    si se invoca en modo
+   *                                  {@code PolicyMode.NONE}.
    */
   public int choose(List<Integer> candidates) throws IllegalArgumentException {
     if (candidates == null || candidates.isEmpty()) {
       throw new IllegalArgumentException("Candidates list cannot be null or empty");
+    }
+    if (!isEnabled()) {
+      throw new IllegalStateException("Policy.choose() should not be used when mode is NONE");
     }
 
     if (isConflictActive(ConflictGroup.AGENTS, candidates)) {
@@ -393,6 +418,9 @@ public class Policy {
 
     summary.append(System.lineSeparator())
         .append("================= RESULTADOS =================")
+        .append(System.lineSeparator())
+        .append(System.lineSeparator())
+        .append("Policy mode: ").append(mode)
         .append(System.lineSeparator())
         .append(System.lineSeparator())
         .append("--- AGENTES (T2 vs T3) ---")

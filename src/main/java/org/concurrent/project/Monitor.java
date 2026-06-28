@@ -4,7 +4,6 @@ import java.util.List;
 import java.util.concurrent.Semaphore;
 import org.concurrent.project.Policy.PolicyMode;
 import org.ejml.data.DMatrixRMaj;
-import org.ejml.dense.row.CommonOps_DDRM;
 import java.util.ArrayList;
 
 /**
@@ -45,7 +44,8 @@ public class Monitor implements MonitorInterface {
    * @param timed indica si se habilitan restricciones temporales.
    * @param log   servicio de logging para eventos de disparo.
    * @param mode  modo de política para selección de transición a despertar entre
-   *              múltiples habilitadas.
+   *              múltiples habilitadas. {@code PolicyMode.NONE} desactiva la
+   *              política y despierta todas las elegibles.
    */
   Monitor(RdP rdp, boolean timed, LogService log, PolicyMode mode) {
     entry = new Semaphore(1, true);
@@ -329,12 +329,20 @@ public class Monitor implements MonitorInterface {
    * Libera esperas de transiciones sensibilizadas con filtrado de política.
    * <p>
    * Construye candidatas de wake-up como transiciones estructuralmente
-   * sensibilizadas y con al menos un hilo esperando. Levanta todos los un
-   * hilo por transición esperando y sensibilizada
+   * sensibilizadas y con al menos un hilo esperando. Si la política está
+   * desactivada (modo {@code PolicyMode.NONE}), despierta
+   * un hilo por cada transición elegible y deja que el monitor + scheduler
+   * resuelvan naturalmente. Si la política está activa, delega en ella la
+   * elección de una única transición a despertar.
    */
   private void updateSensitizedAndRelease() {
     List<Integer> wakeEligibleTransitions = getWakeEligibleTransitions();
     if (wakeEligibleTransitions.isEmpty()) {
+      return;
+    }
+
+    if (!policy.isEnabled()) {
+      releaseAllEligible(wakeEligibleTransitions);
       return;
     }
 
@@ -343,11 +351,42 @@ public class Monitor implements MonitorInterface {
       return;
     }
 
-    DMatrixRMaj waiting = queues.getWaitingCounts();
-    if (waiting.get(0, selectedTransition) > 0) {
-      queues.decrementWaitingCount(selectedTransition);
-      queues.getSemaphoreForTransition(selectedTransition).release();
+    releaseSelectedTransition(selectedTransition);
+  }
+
+  /**
+   * Despierta un hilo en espera por cada transición elegible.
+   * <p>
+   * Se utiliza cuando la política está desactivada para que todas las
+   * transiciones actualmente sensibilizadas y con hilos bloqueados tengan
+   * oportunidad de reintentar el disparo. La exclusión mutua del monitor
+   * garantiza que, aunque varios hilos sean liberados, el acceso efectivo al
+   * marcado siga siendo serializado.
+   *
+   * @param wakeEligibleTransitions lista de transiciones sensibilizadas con al
+   *                                menos un hilo esperando.
+   */
+  private void releaseAllEligible(List<Integer> wakeEligibleTransitions) {
+    for (int transition : wakeEligibleTransitions) {
+      releaseSelectedTransition(transition);
     }
+  }
+
+  /**
+   * Despierta un hilo en espera para una transición específica.
+   * <p>
+   * Si la transición indicada no tiene hilos bloqueados, no realiza ninguna
+   * acción. En caso contrario, decrementa el contador de espera asociado y
+   * libera exactamente un permiso en el semáforo de esa transición.
+   *
+   * @param transition índice de la transición a señalizar.
+   */
+  private void releaseSelectedTransition(int transition) {
+    if (queues.getWaitingCounts().get(0, transition) <= 0) {
+      return;
+    }
+    queues.decrementWaitingCount(transition);
+    queues.getSemaphoreForTransition(transition).release();
   }
 
   /**
@@ -458,4 +497,3 @@ public class Monitor implements MonitorInterface {
     }
   }
 }
-
