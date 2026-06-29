@@ -15,6 +15,7 @@ public class Threads implements Runnable {
   private final int totalInvariants;
   private final MonitorInterface monitor;
   private final AtomicInteger completedInvariants;
+  private final AtomicInteger startedInvariants;
   private final boolean countsCompletion;
   private final AtomicBoolean running;
 
@@ -25,6 +26,7 @@ public class Threads implements Runnable {
    *                            hilo.
    * @param monitor             monitor usado para disparar transiciones.
    * @param completedInvariants contador global de invariantes completados.
+   * @param startedInvariants   contador global de invariantes iniciados.
    * @param totalInvariants     objetivo total de invariantes.
    * @param countsCompletion    {@code true} si completar el camino debe acreditar
    *                            una invariante finalizada.
@@ -34,6 +36,7 @@ public class Threads implements Runnable {
   public Threads(List<Integer> path,
       MonitorInterface monitor,
       AtomicInteger completedInvariants,
+      AtomicInteger startedInvariants,
       int totalInvariants,
       boolean countsCompletion,
       AtomicBoolean running) {
@@ -41,6 +44,7 @@ public class Threads implements Runnable {
     this.totalInvariants = totalInvariants;
     this.monitor = monitor;
     this.completedInvariants = completedInvariants;
+    this.startedInvariants = startedInvariants;
     this.countsCompletion = countsCompletion;
     this.running = running;
   }
@@ -61,20 +65,16 @@ public class Threads implements Runnable {
         break;
       }
 
+      if (!path.isEmpty() && path.get(0) == 0) {
+        if (startedInvariants.incrementAndGet() > totalInvariants) {
+          startedInvariants.decrementAndGet();
+          break;
+        }
+      }
+
       // Ejecutar la secuencia completa asociada a este worker.
       boolean sequenceCompleted = true;
       for (int transition : path) {
-        if (!running.get()) {
-          sequenceCompleted = false;
-          break;
-        }
-
-        if (completedInvariants.get() >= totalInvariants) {
-          running.set(false);
-          sequenceCompleted = false;
-          break;
-        }
-
         if (!monitor.fireTransition(transition)) {
           sequenceCompleted = false;
           break;

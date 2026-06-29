@@ -29,9 +29,10 @@ public class Main {
 
       long startTime = System.currentTimeMillis();
       AtomicInteger completedInvariants = new AtomicInteger(0);
+      AtomicInteger startedInvariants = new AtomicInteger(0);
       AtomicBoolean running = new AtomicBoolean(true);
 
-      Thread[] workers = createWorkers(monitor, completedInvariants, running);
+      Thread[] workers = createWorkers(monitor, completedInvariants, startedInvariants, running);
 
       startThreads(workers);
 
@@ -68,7 +69,7 @@ public class Main {
     }
   }
 
-  private static Thread[] createWorkers(Monitor monitor, AtomicInteger completedInvariants, AtomicBoolean running) {
+  private static Thread[] createWorkers(Monitor monitor, AtomicInteger completedInvariants, AtomicInteger startedInvariants, AtomicBoolean running) {
     List<WorkerSpec> workerSpecs = List.of(
         new WorkerSpec("Thread-1", List.of(0, 1), false),
         new WorkerSpec("Thread-2", List.of(2), false),
@@ -83,7 +84,7 @@ public class Main {
     for (int i = 0; i < workerSpecs.size(); i++) {
       WorkerSpec spec = workerSpecs.get(i);
       workers[i] = new Thread(
-          new Threads(spec.path(), monitor, completedInvariants, TOTAL_RUNS, spec.countsCompletion(), running),
+          new Threads(spec.path(), monitor, completedInvariants, startedInvariants, TOTAL_RUNS, spec.countsCompletion(), running),
           spec.name());
     }
 
