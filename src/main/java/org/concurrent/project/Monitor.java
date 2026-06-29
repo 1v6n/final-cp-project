@@ -2,7 +2,6 @@ package org.concurrent.project;
 
 import java.util.List;
 import java.util.concurrent.Semaphore;
-import org.concurrent.project.Policy.PolicyMode;
 import org.ejml.data.DMatrixRMaj;
 import java.util.ArrayList;
 
@@ -43,16 +42,17 @@ public class Monitor implements MonitorInterface {
    * @param rdp   red de Petri controlada por el monitor.
    * @param timed indica si se habilitan restricciones temporales.
    * @param log   servicio de logging para eventos de disparo.
-   * @param mode  modo de política para selección de transición a despertar entre
-   *              múltiples habilitadas. {@code PolicyMode.NONE} desactiva la
-   *              política y despierta todas las elegibles.
+   * @param policy instancia de política para selección de transición a despertar
+   *               entre múltiples habilitadas. {@code PolicyMode.NONE} desactiva
+   *               la intervención de la política y el monitor despierta todas
+   *               las transiciones elegibles.
    */
-  Monitor(RdP rdp, boolean timed, LogService log, PolicyMode mode) {
+  Monitor(RdP rdp, boolean timed, LogService log, Policy policy) {
     entry = new Semaphore(1, true);
     this.rdp = rdp;
     this.log = log;
     queues = new Queues();
-    policy = new Policy(mode);
+    this.policy = policy;
     time = new TimeRestrictions();
 
     configureTimedTransitions(timed);
@@ -387,13 +387,6 @@ public class Monitor implements MonitorInterface {
     }
     queues.decrementWaitingCount(transition);
     queues.getSemaphoreForTransition(transition).release();
-  }
-
-  /**
-   * Imprime un resumen de la política de despertar.
-   */
-  public void printPolicySummary() {
-    policy.printSummary();
   }
 
   /**
