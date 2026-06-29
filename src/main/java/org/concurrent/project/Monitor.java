@@ -22,10 +22,7 @@ public class Monitor implements MonitorInterface {
   private static final int[][] TIMED_TRANSITIONS_BASE_MS = {
       { 1, 100 }, { 4, 60 }, { 5, 60 }, { 8, 80 }, { 9, 40 }, { 10, 40 } };
 
-  private enum TransitionStep {
-    FIRED,
-    RETRY_MONITOR_RELEASED
-  }
+
 
   private final Semaphore entry;
   private final Queues queues;
@@ -98,46 +95,30 @@ public class Monitor implements MonitorInterface {
   public boolean fireTransition(int transition) {
     validateTransitionIndex(transition);
 
-    while (true) {
-      boolean monitorHeld = false;
-
-      try {
-        catchMonitor();
-        monitorHeld = true;
+    MonitorGuard guard = new MonitorGuard();
+    try {
+      while (true) {
+        if (!guard.isActive()) {
+          guard.catchMonitor();
+        }
         boolean isSensitized = (rdp.getSensitized().get(0, transition) == 1);
 
         if (isSensitized) {
-          TransitionStep step;
+          boolean fired = handleSensitizedTransition(transition, guard);
 
-          try {
-            step = handleSensitizedTransition(transition);
-          } catch (InterruptedException e) {
-            monitorHeld = false;
-            throw e;
-          }
-
-          if (step == TransitionStep.FIRED) {
+          if (fired) {
             return true;
-          }
-          if (step == TransitionStep.RETRY_MONITOR_RELEASED) {
-            monitorHeld = false;
           }
           continue;
         }
 
-        monitorHeld = false;
-        waitForSensitization(transition);
-        continue;
-
-      } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        return false;
-
-      } finally {
-        if (monitorHeld) {
-          releaseMonitor();
-        }
+        waitForSensitization(transition, guard);
       }
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      return false;
+    } finally {
+      guard.releaseMonitor();
     }
   }
 
@@ -149,18 +130,21 @@ public class Monitor implements MonitorInterface {
    * @return próximo paso de control para el ciclo principal.
    * @throws InterruptedException si el hilo es interrumpido durante una espera.
    */
-  private TransitionStep handleSensitizedTransition(int transition) throws InterruptedException {
+  private boolean handleSensitizedTransition(int transition, MonitorGuard guard) throws InterruptedException {
     TimeRestrictions.FireEvaluation evaluation = time.evaluateFire(transition);
 
     switch (evaluation) {
       case ALLOWED:
-        fireAndReleaseTransition(transition);
+        boolean handedOver = fireAndReleaseTransition(transition, guard);
         policy.onTransitionFired(transition);
-        return TransitionStep.FIRED;
+        if (!handedOver) {
+          guard.releaseMonitor();
+        }
+        return true;
 
       case TOO_EARLY:
-        waitUntilEarliestFireTime(transition);
-        return TransitionStep.RETRY_MONITOR_RELEASED;
+        waitUntilEarliestFireTime(transition, guard);
+        return false;
 
       case NOT_ENABLED:
         throw new IllegalStateException(
@@ -182,9 +166,9 @@ public class Monitor implements MonitorInterface {
    * @param transition transición en estado {@code TOO_EARLY}.
    * @throws InterruptedException si el hilo es interrumpido durante la espera.
    */
-  private void waitUntilEarliestFireTime(int transition) throws InterruptedException {
+  private void waitUntilEarliestFireTime(int transition, MonitorGuard guard) throws InterruptedException {
     long remainingMs = time.getRemainingToEarliest(transition);
-    releaseMonitor();
+    guard.releaseMonitor();
 
     if (remainingMs > 0) {
       Thread.sleep(remainingMs);
@@ -201,10 +185,11 @@ public class Monitor implements MonitorInterface {
    * @param transition transición actualmente no sensibilizada.
    * @throws InterruptedException si el hilo es interrumpido durante la espera.
    */
-  private void waitForSensitization(int transition) throws InterruptedException {
+  private void waitForSensitization(int transition, MonitorGuard guard) throws InterruptedException {
     queues.incrementWaitingCount(transition);
-    releaseMonitor();
+    guard.releaseMonitor();
     queues.getSemaphoreForTransition(transition).acquire();
+    guard.resume();
   }
 
   /**
@@ -263,12 +248,12 @@ public class Monitor implements MonitorInterface {
    *
    * @param transition transición a disparar.
    */
-  private void fireAndReleaseTransition(int transition) {
+  private boolean fireAndReleaseTransition(int transition, MonitorGuard guard) {
     DMatrixRMaj firingVector = createFiringVector(transition);
     rdp.fireTransition(firingVector);
     time.updateFromSensitized(rdp.getSensitized());
     time.onTransitionFired(transition, rdp.getSensitized().get(0, transition) == 1);
-    updateSensitizedAndRelease();
+    boolean handedOver = updateSensitizedAndRelease(guard);
 
     if (log != null) {
       DMatrixRMaj markingMatrix = rdp.getMarcadoActual();
@@ -292,6 +277,7 @@ public class Monitor implements MonitorInterface {
       log.logFire(Thread.currentThread().getName(), transition, true,
           snapshotMarking(), pinv);
     }
+    return handedOver;
   }
 
   /**
@@ -325,50 +311,66 @@ public class Monitor implements MonitorInterface {
     return new DMatrixRMaj(firing.length, 1, true, firing);
   }
 
+
   /**
    * Libera esperas de transiciones sensibilizadas con filtrado de política.
    * <p>
-   * Construye candidatas de wake-up como transiciones estructuralmente
-   * sensibilizadas y con al menos un hilo esperando. Si la política está
-   * desactivada (modo {@code PolicyMode.NONE}), despierta
-   * un hilo por cada transición elegible y deja que el monitor + scheduler
-   * resuelvan naturalmente. Si la política está activa, delega en ella la
-   * elección de una única transición a despertar.
+   * Si existen hilos esperando por transiciones sensibilizadas, se selecciona
+   * una transición según la política para despertar su hilo correspondiente y
+   * cederle el control del monitor.
+   *
+   * @param guard guardián del monitor que gestiona la cesión o liberación de la exclusión mutua.
+   * @return {@code true} si se despertó a algún hilo (y por tanto se le cede el
+   *         monitor); {@code false} en caso contrario.
    */
-  private void updateSensitizedAndRelease() {
+  private boolean updateSensitizedAndRelease(MonitorGuard guard) {
     List<Integer> wakeEligibleTransitions = getWakeEligibleTransitions();
     if (wakeEligibleTransitions.isEmpty()) {
-      return;
+      return false;
     }
 
+    int selectedTransition;
     if (!policy.isEnabled()) {
-      releaseAllEligible(wakeEligibleTransitions);
-      return;
-    }
-
-    int selectedTransition = policy.choose(wakeEligibleTransitions);
-    if (selectedTransition == -1) {
-      return;
+      selectedTransition = wakeEligibleTransitions.get(0);
+    } else {
+      selectedTransition = policy.choose(wakeEligibleTransitions);
     }
 
     releaseSelectedTransition(selectedTransition);
+    guard.handoff();
+    return true;
   }
 
   /**
-   * Despierta un hilo en espera por cada transición elegible.
+   * Representa un guardián de monitor que simplifica el control de posesión de exclusión mutua.
    * <p>
-   * Se utiliza cuando la política está desactivada para que todas las
-   * transiciones actualmente sensibilizadas y con hilos bloqueados tengan
-   * oportunidad de reintentar el disparo. La exclusión mutua del monitor
-   * garantiza que, aunque varios hilos sean liberados, el acceso efectivo al
-   * marcado siga siendo serializado.
-   *
-   * @param wakeEligibleTransitions lista de transiciones sensibilizadas con al
-   *                                menos un hilo esperando.
+   * Encapsula el flag de estado {@code active} para evitar el control manual repetitivo.
    */
-  private void releaseAllEligible(List<Integer> wakeEligibleTransitions) {
-    for (int transition : wakeEligibleTransitions) {
-      releaseSelectedTransition(transition);
+  private class MonitorGuard {
+    private boolean active = false;
+
+    public void catchMonitor() throws InterruptedException {
+      Monitor.this.catchMonitor();
+      active = true;
+    }
+
+    public void releaseMonitor() {
+      if (active) {
+        Monitor.this.releaseMonitor();
+        active = false;
+      }
+    }
+
+    public void handoff() {
+      active = false;
+    }
+
+    public void resume() {
+      active = true;
+    }
+
+    public boolean isActive() {
+      return active;
     }
   }
 
