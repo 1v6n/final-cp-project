@@ -13,7 +13,7 @@ import java.util.function.LongSupplier;
  * Gestiona restricciones temporales de disparo para transiciones de la RdP.
  * <p>
  * Implementa evaluación en semántica débil sobre EFT (alpha) por instancia
- * de habilitación, con LTF infinito (sin expiración).
+ * de habilitación, con LFT infinito (sin expiración).
  */
 public class TimeRestrictions {
     /** Resultado de evaluación temporal para un intento de disparo. */
