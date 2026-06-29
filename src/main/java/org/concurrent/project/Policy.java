@@ -13,56 +13,6 @@ public class Policy {
     PRIORITIZED
   }
 
-  /**
-   * Registro que representa la decisión de política sobre si una transición debe
-   * dispararse.
-   * <p>
-   * Incluye información sobre si el disparo fue permitido, cuál transición fue
-   * seleccionada
-   * (en caso de conflicto) y si la decisión se tomó en un contexto de conflicto
-   * activo.
-   * 
-   * @param shouldFire         indica si la transición solicitada debe dispararse.
-   * @param selectedTransition la transición seleccionada por la política
-   *                           (relevante solo si hay conflicto).
-   * @param conflictActive     indica si la decisión se tomó en un contexto donde
-   *                           el conflicto estaba activo (ambas transiciones
-   *                           habilitadas).
-   */
-  public record PolicyDecision(boolean shouldFire, int selectedTransition, boolean conflictActive) {
-    /**
-     * Crea una decisión de política que permite el disparo de la transición
-     * solicitada
-     * sin conflicto.
-     *
-     * @param transition la transición que se permitirá disparar.
-     * @return una instancia de {@code PolicyDecision} que indica que el disparo
-     *         está permitido
-     *         y que no hay conflicto activo.
-     */
-    public static PolicyDecision allow(int transition) {
-      return new PolicyDecision(true, transition, false);
-    }
-
-    /**
-     * Crea una decisión de política basada en la evaluación de si la transición
-     * solicitada debe dispararse, cuál transición fue seleccionada en caso de
-     * conflicto, y si el conflicto estaba activo.
-     * 
-     * @param shouldFire         indica si la transición solicitada debe dispararse.
-     * @param selectedTransition la transición seleccionada por la política
-     *                           (relevante solo si hay conflicto).
-     * @param conflictActive     indica si la decisión se tomó en un contexto donde
-     *                           el conflicto estaba activo (ambas transiciones
-     *                           habilitadas).
-     * @return una instancia de {@code PolicyDecision} que encapsula la decisión de
-     *         política basada en los parámetros proporcionados.
-     */
-    public static PolicyDecision resolve(boolean shouldFire, int selectedTransition, boolean conflictActive) {
-      return new PolicyDecision(shouldFire, selectedTransition, conflictActive);
-    }
-  }
-
   private enum ConflictGroup {
     AGENTS, RESERVATIONS, NONE
   }
@@ -281,23 +231,6 @@ public class Policy {
   }
 
   /**
-   * Determina a qué grupo de conflicto pertenece la transición dada, si es que
-   * pertenece a alguno.
-   * 
-   * @param transition la transición para la cual se desea determinar el grupo de
-   *                   conflicto.
-   * @return el grupo de conflicto al que pertenece la transición dada (AGENTS,
-   *         RESERVATIONS o NONE).
-   */
-  private ConflictGroup groupForTransition(int transition) {
-    return switch (transition) {
-      case 2, 3 -> ConflictGroup.AGENTS;
-      case 6, 7 -> ConflictGroup.RESERVATIONS;
-      default -> ConflictGroup.NONE;
-    };
-  }
-
-  /**
    * Determina si el conflicto para el grupo dado está activo, es decir, si ambas
    * transiciones en conflicto están habilitadas en la lista de candidatos actual.
    * 
@@ -317,24 +250,6 @@ public class Policy {
       case RESERVATIONS ->
         currentlyEnabled.contains(6) && currentlyEnabled.contains(7);
       case NONE -> false;
-    };
-  }
-
-  /**
-   * Obtiene la selección "sticky" actual para el grupo de conflicto dado, si
-   * existe.
-   * 
-   * @param group el grupo de conflicto para el cual se desea obtener la selección
-   *              sticky (AGENTS o RESERVATIONS).
-   * @return la transición seleccionada actualmente como sticky para el grupo
-   *         especificado, o -1 si no hay ninguna selección sticky activa para ese
-   *         grupo.
-   */
-  private int getStickySelection(ConflictGroup group) {
-    return switch (group) {
-      case AGENTS -> forcedAgentTransition;
-      case RESERVATIONS -> forcedReservationTransition;
-      case NONE -> -1;
     };
   }
 
@@ -495,12 +410,5 @@ public class Policy {
         .append(System.lineSeparator());
 
     System.out.print(summary);
-  }
-
-  public void debugTotals() {
-    System.out.println("Agents real total: " +
-        (agentInferiorCount + agentSuperiorCount));
-    System.out.println("Reservations real total: " +
-        (confirmedReservations + cancelledReservations));
   }
 }
