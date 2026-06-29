@@ -13,59 +13,71 @@ participant "Queues" as Q
 W -> M : fireTransition(t)
 
 loop until fired or interrupted
+
+  M -> M : validateTransitionIndex()
   M -> M : catchMonitor()
-  M -> R : read sensitized[t]
-
-  alt not sensitized
-    M -> M : waitForSensitization(t)
-    M -> Q : incrementWaitingCount(t)
-    M -> M : releaseMonitor()
-    M -> Q : acquire(sem[t])
-
-  else sensitized
+  M -> R : read sensitized(t)
+  R --> M : boolean isSensitized
+  
+  opt sensitized
     M -> M : handleSensitizedTransition(t)
+    group handleSensitizedTransition
     M -> T : evaluateFire(t)
+    T --> M : evaluation
 
     alt ALLOWED
       M -> M : fireAndReleaseTransition(t)
-      M -> R : fireTransition(firingVector, t)
-      
-      note over Pol: Actualiza contadores globales
-      M -> Pol : onTransitionFired(t)
-      
+
+      group fireAndReleaseTransition
+      M -> R : fireTransition(firingVector)
       M -> T : updateFromSensitized(getSensitized())
+      M -> T : onTransitionFired(transition, isSensitized())
+      M -> T : updateFromSensitized(getSensitized())
+      M -> M : updateSensitizedAndRelease()
+      end
       
       group updateSensitizedAndRelease
-        M -> R : getSensitized()
-        M -> Q : getWaitingCounts()
         M -> M : getWakeEligibleTransitions()
         
         M -> Pol : choose(wakeEligibleTransitions)
         Pol --> M : selectedTransition
         
-        alt selectedTransition != -1
+        group releaseSelectedTransition
             M -> Q : decrementWaitingCount(selectedTransition)
             M -> Q : release(sem[selectedTransition])
         end
-      end
+      end ' <-- FALTABA ESTE END PARA EL GROUP
       
-      M -> M : releaseMonitor()
+      M --> M : FIRED
       M --> W : true
-      break
+      
+      note over M: Éxito: Transición disparada
 
     else TOO_EARLY
       M -> M : waitUntilEarliestFireTime(t)
+      group waitUntilEarliestFireTime
       M -> T : getRemainingToEarliest(t)
+      
       M -> M : releaseMonitor()
       M -> M : Thread.sleep(remainingMs)
+      end
+      M --> M : RETRY
+      note over M: Intento de nuevo
+
 
     else NOT_ENABLED
       M -> M : throw IllegalStateException
-      break
+      M --> W : false
+      note over M: Error: Estado inconsistente
     end
   end
 end
-
-M --> W : false (if InterruptedException)
+    M -> M : waitForSensitization(t)
+    group waitForSensitization
+    M -> Q : incrementWaitingCount(t)
+    M -> M : releaseMonitor()
+    M -> Q : acquire(sem(t))
+    end
+end
 
 @enduml
