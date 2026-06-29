@@ -12,7 +12,7 @@ import java.util.function.LongSupplier;
 /**
  * Gestiona restricciones temporales de disparo para transiciones de la RdP.
  * <p>
- * Implementa evaluación en semántica débil sobre ETF (alpha) por instancia
+ * Implementa evaluación en semántica débil sobre EFT (alpha) por instancia
  * de habilitación, con LTF infinito (sin expiración).
  */
 public class TimeRestrictions {
@@ -72,24 +72,24 @@ public class TimeRestrictions {
     }
 
     /**
-     * Configura una transición temporizada con ETF (alpha) y beta infinito.
+     * Configura una transición temporizada con EFT (alpha) y beta infinito.
      *
      * @param transition número de transición.
-     * @param alphaMs    ETF relativo al instante de sensibilización.
+     * @param alphaMs    EFT relativo al instante de sensibilización.
      */
     public void setTimedTransition(int transition, long alphaMs) {
         setTimedTransition(transition, alphaMs, INFINITE_BETA);
     }
 
     /**
-     * Configura una transición temporizada con ETF (alpha) y LTF (beta).
+     * Configura una transición temporizada con EFT (alpha) y LFT (beta).
      * <p>
      * En la configuración actual del monitor se usa beta infinito por
      * defecto, pero se admite cualquier beta válido (beta >= alpha).
      *
      * @param transition número de transición.
-     * @param alphaMs    ETF relativo al instante de sensibilización.
-     * @param betaMs     LTF relativo al instante de sensibilización.
+     * @param alphaMs    EFT relativo al instante de sensibilización.
+     * @param betaMs     LFT relativo al instante de sensibilización.
      */
     public void setTimedTransition(int transition, long alphaMs, long betaMs) {
         if (alphaMs < 0) {
@@ -198,10 +198,10 @@ public class TimeRestrictions {
     }
 
     /**
-     * Tiempo restante para alcanzar ETF.
+     * Tiempo restante para alcanzar EFT.
      *
      * @param transition número de transición.
-     * @return milisegundos restantes para ETF ({@code 0} si no aplica).
+     * @return milisegundos restantes para EFT ({@code 0} si no aplica).
      */
     public long getRemainingToEarliest(int transition) {
         if (!isTimedTransition(transition)) {
