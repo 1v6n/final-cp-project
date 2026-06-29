@@ -15,7 +15,7 @@ public class Main {
   private static final int TOTAL_RUNS = 186;
   private static final boolean timed = true;
   /** Policy mode applied by the monitor. Change to compare behaviors. */
-  private static final PolicyMode POLICY_MODE = PolicyMode.NONE;
+  private static final PolicyMode POLICY_MODE = PolicyMode.BALANCED;
 
   private record WorkerSpec(String name, List<Integer> path, boolean countsCompletion) {
   }
@@ -25,7 +25,8 @@ public class Main {
 
     try (LogService logService = new LogService(logPath)) {
       RdP rdP = new RdP();
-      Monitor monitor = new Monitor(rdP, timed, logService, POLICY_MODE);
+      Policy policy = new Policy(POLICY_MODE);
+      Monitor monitor = new Monitor(rdP, timed, logService, policy);
 
       long startTime = System.currentTimeMillis();
       AtomicInteger completedInvariants = new AtomicInteger(0);
@@ -63,7 +64,7 @@ public class Main {
         Thread.currentThread().interrupt();
       }
 
-      printSummary(startTime, completedInvariants, monitor);
+      printSummary(startTime, completedInvariants, policy);
     } catch (IOException e) {
       e.printStackTrace();
     }
@@ -118,10 +119,10 @@ public class Main {
     }
   }
 
-  private static void printSummary(long startTime, AtomicInteger completedInvariants, Monitor monitor) {
+  private static void printSummary(long startTime, AtomicInteger completedInvariants, Policy policy) {
     System.out.println("All threads have completed.");
     System.out.println("Total time elapsed: " + (System.currentTimeMillis() - startTime));
     System.out.println("Total invariants runned:" + completedInvariants.get());
-    monitor.printPolicySummary();
+    policy.printSummary();
   }
 }
