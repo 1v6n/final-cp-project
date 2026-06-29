@@ -72,16 +72,6 @@ public class TimeRestrictions {
     }
 
     /**
-     * Configura una transición temporizada con EFT (alpha) y beta infinito.
-     *
-     * @param transition número de transición.
-     * @param alphaMs    EFT relativo al instante de sensibilización.
-     */
-    public void setTimedTransition(int transition, long alphaMs) {
-        setTimedTransition(transition, alphaMs, INFINITE_BETA);
-    }
-
-    /**
      * Configura una transición temporizada con EFT (alpha) y LFT (beta).
      * <p>
      * En la configuración actual del monitor se usa beta infinito por
