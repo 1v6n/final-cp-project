@@ -317,7 +317,7 @@ public class Monitor implements MonitorInterface {
    * en el resto de posiciones.
    *
    * @param transition índice de transición objetivo.
-   * @return matriz columna EJML con el vector de disparo.
+   * @return matriz fila EJML con el vector de disparo.
    */
   private DMatrixRMaj createFiringVector(int transition) {
     double[] firing = new double[rdp.getIncidencia().numCols];
