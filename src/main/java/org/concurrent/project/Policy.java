@@ -1,6 +1,7 @@
 package org.concurrent.project;
 
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Clase que implementa la política de selección de transiciones para el monitor
@@ -311,6 +312,17 @@ public class Policy {
     }
     // si no hay conflicto, simplemente devolvemos el primero
     return candidates.getFirst();
+  }
+
+  /**
+   * Elige cualquier transicion candidata a ser disparada usando un generador
+   * de número aleatorio.
+   *
+   * @param candidates Lista de candidatos a elegir
+   * @return número de transición a disparar
+   */
+  public int selectAny(List<Integer> candidates) {
+    return candidates.get(ThreadLocalRandom.current().nextInt(candidates.size()));
   }
 
   /**
