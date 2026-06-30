@@ -112,27 +112,22 @@ public class TimeRestrictions {
      *
      * @param transition   número de transición.
      * @param isSensitized {@code true} si la transición está sensibilizada.
-     * @return {@code true} si se detectó una nueva habilitación en esta
-     *         actualización;
-     *         {@code false} en cualquier otro caso.
      */
-    public boolean updateSensitizationState(int transition, boolean isSensitized) {
+    public void updateSensitizationState(int transition, boolean isSensitized) {
         if (!isTimedTransition(transition)) {
-            return false;
+            return;
         }
 
         RuntimeState state = runtimeStates.get(transition);
         if (isSensitized && !state.sensitized) {
             state.sensitized = true;
             state.enabledAtNs = clockNs.getAsLong();
-            return true;
+            return;
         }
 
         if (!isSensitized && state.sensitized) {
             state.sensitized = false;
         }
-
-        return false;
     }
 
     /**
@@ -140,22 +135,13 @@ public class TimeRestrictions {
      * matriz de sensibilización.
      *
      * @param sensitized matriz 1xN de transiciones sensibilizadas.
-     * @return lista de transiciones que pasaron de no sensibilizadas a
-     *         sensibilizadas.
      */
-    public List<Integer> updateFromSensitized(DMatrixRMaj sensitized) {
-        List<Integer> newlyEnabledTransitions = new ArrayList<>();
-
+    public void updateFromSensitized(DMatrixRMaj sensitized) {
         for (Map.Entry<Integer, TimingConfig> entry : timedTransitions.entrySet()) {
             int transition = entry.getKey();
             boolean isSensitized = sensitized.get(0, transition) == 1;
-
-            if (updateSensitizationState(transition, isSensitized)) {
-                newlyEnabledTransitions.add(transition);
-            }
+            updateSensitizationState(transition, isSensitized);
         }
-
-        return newlyEnabledTransitions;
     }
 
     /**
