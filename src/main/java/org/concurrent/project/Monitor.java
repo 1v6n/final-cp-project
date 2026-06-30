@@ -2,7 +2,6 @@ package org.concurrent.project;
 
 import java.util.List;
 import java.util.concurrent.Semaphore;
-import org.concurrent.project.Policy.PolicyMode;
 import org.ejml.data.DMatrixRMaj;
 import java.util.ArrayList;
 
@@ -45,12 +44,12 @@ public class Monitor implements MonitorInterface {
    *              política y selecciona la primera transición elegible por
    *              índice.
    */
-  Monitor(RdP rdp, boolean timed, LogService log, PolicyMode mode) {
+  Monitor(RdP rdp, boolean timed, LogService log, Policy policy) {
     entry = new Semaphore(1, true);
     this.rdp = rdp;
     this.log = log;
     queues = new Queues();
-    policy = new Policy(mode);
+    this.policy = policy;
     time = new TimeRestrictions();
 
     configureTimedTransitions(timed);
@@ -397,13 +396,6 @@ public class Monitor implements MonitorInterface {
     }
     queues.decrementWaitingCount(transition);
     queues.getSemaphoreForTransition(transition).release();
-  }
-
-  /**
-   * Imprime un resumen de la política de despertar.
-   */
-  public void printPolicySummary() {
-    policy.printSummary();
   }
 
   /**
