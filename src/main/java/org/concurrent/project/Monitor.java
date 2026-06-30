@@ -36,10 +36,10 @@ public class Monitor implements MonitorInterface {
    * <p>
    * Inicializa semáforo de entrada, colas de espera y utilidades de tiempo.
    *
-   * @param rdp   red de Petri controlada por el monitor.
-   * @param timed indica si se habilitan restricciones temporales.
-   * @param log   servicio de logging para eventos de disparo.
-   * @param mode  modo de política para selección de transición a despertar entre
+   * @param rdp     red de Petri controlada por el monitor.
+   * @param timed   indica si se habilitan restricciones temporales.
+   * @param log     servicio de logging para eventos de disparo.
+   * @param policy  modo de política para selección de transición a despertar entre
    *              múltiples habilitadas. {@code PolicyMode.NONE} desactiva la
    *              política y selecciona la primera transición elegible por
    *              índice.
@@ -338,7 +338,7 @@ public class Monitor implements MonitorInterface {
 
     int selectedTransition;
     if (!policy.isEnabled()) {
-      selectedTransition = wakeEligibleTransitions.get(0);
+      selectedTransition = wakeEligibleTransitions.getFirst();
     } else {
       selectedTransition = policy.choose(wakeEligibleTransitions);
     }
@@ -409,7 +409,7 @@ public class Monitor implements MonitorInterface {
    * @return lista de índices de transiciones elegibles para despertar.
    */
   private List<Integer> getWakeEligibleTransitions() {
-    List<Integer> wakeEligible = new java.util.ArrayList<>();
+    List<Integer> wakeEligible = new ArrayList<>();
     DMatrixRMaj sensitized = rdp.getSensitized();
     DMatrixRMaj waiting = queues.getWaitingCounts();
 

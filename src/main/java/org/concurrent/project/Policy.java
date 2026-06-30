@@ -310,7 +310,7 @@ public class Policy {
       return selected;
     }
     // si no hay conflicto, simplemente devolvemos el primero
-    return candidates.get(0);
+    return candidates.getFirst();
   }
 
   /**

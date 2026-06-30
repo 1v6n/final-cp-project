@@ -15,7 +15,7 @@ public class Main {
   private static final int TOTAL_RUNS = 186;
   private static final boolean timed = true;
   /** Policy mode applied by the monitor. Change to compare behaviors. */
-  private static final PolicyMode POLICY_MODE = PolicyMode.BALANCED;
+  private static final PolicyMode POLICY_MODE = PolicyMode.PRIORITIZED;
 
   private record WorkerSpec(String name, List<Integer> path, boolean countsCompletion) {
   }
@@ -122,7 +122,7 @@ public class Main {
   private static void printSummary(long startTime, AtomicInteger completedInvariants, Policy policy) {
     System.out.println("All threads have completed.");
     System.out.println("Total time elapsed: " + (System.currentTimeMillis() - startTime));
-    System.out.println("Total invariants runned:" + completedInvariants.get());
+    System.out.println("Total ran invariants:" + completedInvariants.get());
     policy.printSummary();
   }
 }
