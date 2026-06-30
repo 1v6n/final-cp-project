@@ -42,7 +42,8 @@ public class Monitor implements MonitorInterface {
    * @param log   servicio de logging para eventos de disparo.
    * @param mode  modo de política para selección de transición a despertar entre
    *              múltiples habilitadas. {@code PolicyMode.NONE} desactiva la
-   *              política y despierta todas las elegibles.
+   *              política y selecciona la primera transición elegible por
+   *              índice.
    */
   Monitor(RdP rdp, boolean timed, LogService log, PolicyMode mode) {
     entry = new Semaphore(1, true);
@@ -313,11 +314,18 @@ public class Monitor implements MonitorInterface {
 
 
   /**
-   * Libera esperas de transiciones sensibilizadas con filtrado de política.
+   * Despierta exactamente un hilo en espera y le cede el mutex (signal-and-exit).
    * <p>
-   * Si existen hilos esperando por transiciones sensibilizadas, se selecciona
-   * una transición según la política para despertar su hilo correspondiente y
-   * cederle el control del monitor.
+   * Si existen hilos esperando por transiciones sensibilizadas, selecciona una
+   * transición según el modo de política y libera su semáforo asociado. El
+   * mutex no se libera: se transfiere al hilo despertado mediante
+   * {@link MonitorGuard#handoff()}, evitando que compita en la cola de entrada.
+   * <p>
+   * Criterio de selección:
+   * <ul>
+   *   <li>{@code NONE}: la primera transición elegible por índice.</li>
+   *   <li>{@code BALANCED}/{@code PRIORITIZED}: delega en {@link Policy#choose}.</li>
+   * </ul>
    *
    * @param guard guardián del monitor que gestiona la cesión o liberación de la exclusión mutua.
    * @return {@code true} si se despertó a algún hilo (y por tanto se le cede el

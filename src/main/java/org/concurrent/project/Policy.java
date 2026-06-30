@@ -62,11 +62,10 @@ public class Policy {
   /**
    * Indica si la política de selección debe aplicarse.
    * <p>
-   * En modo {@code PolicyMode.NONE} no se aplica ninguna política propia:
-   * el monitor despierta todas las transiciones elegibles y deja que el
-   * scheduler junto con la exclusión mutua resuelvan el orden natural de
-   * ejecución. En los modos restantes, la política interviene para seleccionar
-   * qué transición despertar ante conflictos.
+   * En modo {@code PolicyMode.NONE} no se aplica ninguna política propia: el
+   * monitor despierta la primera transición elegible por índice (signal-and-exit)
+   * y le cede el mutex. En los modos restantes, la política interviene para
+   * seleccionar qué transición despertar ante conflictos.
    *
    * @return {@code true} si la política está activa (BALANCED o PRIORITIZED).
    */
