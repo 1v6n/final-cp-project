@@ -136,7 +136,6 @@ public class Monitor implements MonitorInterface {
     switch (evaluation) {
       case ALLOWED:
         boolean handedOver = fireAndReleaseTransition(transition, guard);
-        policy.onTransitionFired(transition);
         if (!handedOver) {
           guard.releaseMonitor();
         }
@@ -253,7 +252,6 @@ public class Monitor implements MonitorInterface {
     rdp.fireTransition(firingVector);
     time.updateFromSensitized(rdp.getSensitized());
     time.onTransitionFired(transition, rdp.getSensitized().get(0, transition) == 1);
-    boolean handedOver = updateSensitizedAndRelease(guard);
 
     if (log != null) {
       DMatrixRMaj markingMatrix = rdp.getMarcadoActual();
@@ -277,7 +275,8 @@ public class Monitor implements MonitorInterface {
       log.logFire(Thread.currentThread().getName(), transition, true,
           snapshotMarking(), pinv);
     }
-    return handedOver;
+    policy.onTransitionFired(transition);
+    return updateSensitizedAndRelease(guard);
   }
 
   /**
@@ -343,8 +342,8 @@ public class Monitor implements MonitorInterface {
       selectedTransition = policy.choose(wakeEligibleTransitions);
     }
 
-    releaseSelectedTransition(selectedTransition);
     guard.handoff();
+    releaseSelectedTransition(selectedTransition);
     return true;
   }
 
