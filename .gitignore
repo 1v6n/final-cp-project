@@ -4,4 +4,4 @@ target
 .project
 .settings/
 AGENTS.md
-logs/
+logs/*
