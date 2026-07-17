@@ -180,6 +180,12 @@ public class Monitor implements MonitorInterface {
    * <p>
    * Incrementa contabilidad de espera, libera el monitor y aguarda en el
    * semáforo asociado a la transición.
+   * <p>
+   * Si el {@code acquire()} es interrumpido (p.ej. parada vía
+   * {@code Thread.interrupt()}), el contador de espera se decrementa en el
+   * {@code finally} para evitar un leak que dejaría a la transición con un
+   * waiter fantasma y podría gatillar despertares espurios o un handoff sin
+   * receptor.
    *
    * @param transition transición actualmente no sensibilizada.
    * @throws InterruptedException si el hilo es interrumpido durante la espera.
@@ -187,7 +193,15 @@ public class Monitor implements MonitorInterface {
   private void waitForSensitization(int transition, MonitorGuard guard) throws InterruptedException {
     queues.incrementWaitingCount(transition);
     guard.releaseMonitor();
-    queues.getSemaphoreForTransition(transition).acquire();
+    boolean acquired = false;
+    try {
+      queues.getSemaphoreForTransition(transition).acquire();
+      acquired = true;
+    } finally {
+      if (!acquired) {
+        queues.decrementWaitingCount(transition);
+      }
+    }
     guard.resume();
   }
 
@@ -319,6 +333,13 @@ public class Monitor implements MonitorInterface {
    * mutex no se libera: se transfiere al hilo despertado mediante
    * {@link MonitorGuard#handoff()}, evitando que compita en la cola de entrada.
    * <p>
+   * <b>Orden de operaciones:</b> primero se señaliza al waiter
+   * ({@link #releaseSelectedTransition(int)}) y luego se ejecuta
+   * {@link MonitorGuard#handoff()}. La señalización siempre es efectiva porque
+   * {@link #getWakeEligibleTransitions()} garantiza que la transición elegida
+   * tiene al menos un waiter, y todo el bloque se ejecuta bajo el mutex sin
+   * liberarlo entre el chequeo y la señalización.
+   * <p>
    * Criterio de selección:
    * <ul>
    *   <li>{@code NONE}: la primera transición elegible por índice.</li>
@@ -342,8 +363,8 @@ public class Monitor implements MonitorInterface {
       selectedTransition = policy.choose(wakeEligibleTransitions);
     }
 
-    guard.handoff();
     releaseSelectedTransition(selectedTransition);
+    guard.handoff();
     return true;
   }
 
@@ -383,16 +404,19 @@ public class Monitor implements MonitorInterface {
   /**
    * Despierta un hilo en espera para una transición específica.
    * <p>
-   * Si la transición indicada no tiene hilos bloqueados, no realiza ninguna
-   * acción. En caso contrario, decrementa el contador de espera asociado y
-   * libera exactamente un permiso en el semáforo de esa transición.
+   * Decrementa el contador de espera asociado y libera exactamente un permiso
+   * en el semáforo de esa transición.
+   * <p>
+   * <b>Precondición:</b> la transición indicada tiene al menos un hilo
+   * esperando. El caller ({@link #updateSensitizedAndRelease}) garantiza esta
+   * precondición al elegir la transición desde
+   * {@link #getWakeEligibleTransitions()}, que filtra por
+   * {@code waitingCount > 0}, y todo el bloque se ejecuta bajo el mutex sin
+   * liberarlo entre el chequeo y esta llamada.
    *
    * @param transition índice de la transición a señalizar.
    */
   private void releaseSelectedTransition(int transition) {
-    if (queues.getWaitingCounts().get(0, transition) <= 0) {
-      return;
-    }
     queues.decrementWaitingCount(transition);
     queues.getSemaphoreForTransition(transition).release();
   }
