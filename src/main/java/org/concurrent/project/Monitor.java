@@ -1,9 +1,10 @@
 package org.concurrent.project;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Semaphore;
+
 import org.ejml.data.DMatrixRMaj;
-import java.util.ArrayList;
 
 /**
  * Monitor de exclusión mutua para control concurrente de una Red de Petri.
@@ -11,9 +12,9 @@ import java.util.ArrayList;
  * Coordina el disparo concurrente de transiciones de la RdP mediante exclusión
  * mutua.
  * <p>
- * Este monitor centraliza tres responsabilidades: serializar acceso al marcado,
- * aplicar restricciones temporales de semántica débil y despertar hilos en
- * espera cuando una transición vuelve a estar habilitada para disparo.
+ * Centraliza la exclusión mutua sobre la RdP, la aplicación de restricciones
+ * temporales, la selección y señalización de hilos en espera, y el registro
+ * consistente de cada disparo.
  */
 public class Monitor implements MonitorInterface {
   // ============================================================
@@ -108,17 +109,17 @@ public class Monitor implements MonitorInterface {
     Ownership ownership = new Ownership();
     try {
       while (true) {
-        // Tras un waitForSensitization o waitUntilEarliestFireTime el
-        // ownership ya está activo; aquí solo re-adquirimos si hace falta.
+        // Un waiter señalizado vuelve con ownership activo por handoff. Después
+        // de una espera temporal queda inactivo y debe adquirir entry nuevamente.
         if (!ownership.isOwned()) {
           ownership.acquire();
         }
         boolean isSensitized = (rdp.getSensitized().get(0, transition) == 1);
 
         if (isSensitized) {
-          boolean fired = handleSensitizedTransition(transition, ownership);
+          boolean transitionFired = handleSensitizedTransition(transition, ownership);
 
-          if (fired) {
+          if (transitionFired) {
             return true;
           }
           continue;
@@ -139,7 +140,8 @@ public class Monitor implements MonitorInterface {
    * temporal.
    *
    * @param transition transición sensibilizada a evaluar.
-   * @return próximo paso de control para el ciclo principal.
+   * @return {@code true} si la transición fue disparada; {@code false} si era
+   *         demasiado temprano y debe reintentarse después de la espera.
    * @throws InterruptedException si el hilo es interrumpido durante una espera.
    */
   private boolean handleSensitizedTransition(int transition, Ownership ownership) throws InterruptedException {
@@ -147,10 +149,7 @@ public class Monitor implements MonitorInterface {
 
     switch (evaluation) {
       case ALLOWED:
-        boolean handedOver = fireAndReleaseTransition(transition, ownership);
-        if (!handedOver) {
-          ownership.release();
-        }
+        fireAndReleaseTransition(transition, ownership);
         return true;
 
       case TOO_EARLY:
@@ -167,6 +166,164 @@ public class Monitor implements MonitorInterface {
             evaluation);
     }
   }
+
+  // Disparo exitoso
+
+  /**
+   * Dispara la transición y resuelve la salida del monitor.
+   * <p>
+   * Construye el vector de disparo, actualiza la RdP y la temporización,
+   * registra el resultado, notifica a la política y finalmente libera el mutex
+   * o lo cede mediante handoff a un waiter elegible.
+   *
+   * @param transition transición a disparar.
+   */
+  private void fireAndReleaseTransition(int transition, Ownership ownership) {
+    DMatrixRMaj firingVector = createFiringVector(transition);
+    rdp.fireTransition(firingVector);
+    time.updateFromSensitized(rdp.getSensitized());
+    time.onTransitionFired(transition, rdp.getSensitized().get(0, transition) == 1);
+
+    logFireResult(transition);
+    policy.onTransitionFired(transition);
+    selectWaiterOrRelease(ownership);
+  }
+
+  /**
+   * Registra el resultado de un disparo en el log, incluyendo el chequeo de
+   * P-invariantes.
+   * <p>
+   * Toma una instantánea del marcado actual, evalúa los P-invariantes y, si
+   * hay un fallo, registra un evento {@code PINV_FAIL} antes de registrar el
+   * disparo. Si el servicio de logging es {@code null}, no hace nada.
+   * <p>
+   * Se ejecuta bajo el mutex para preservar el orden observable de los eventos
+   * y garantizar una instantánea consistente del marcado.
+   *
+   * @param transition transición recién disparada.
+   */
+  private void logFireResult(int transition) {
+    if (log == null) {
+      return;
+    }
+    DMatrixRMaj markingMatrix = rdp.getMarcadoActual();
+    List<Invariants.PInvariantResult> results = Invariants.checkPInvariants(markingMatrix, pInvariants);
+    String pinv = "OK";
+    Invariants.PInvariantResult firstFail = null;
+
+    for (Invariants.PInvariantResult r : results) {
+      if (!r.ok()) {
+        firstFail = r;
+        pinv = "FAIL(" + r.name() + ",got=" + r.got() + ",exp=" + r.expected() + ")";
+        break;
+      }
+    }
+
+    if (firstFail != null) {
+      log.logEvent(Thread.currentThread().getName(),
+          "PINV_FAIL name=" + firstFail.name() + " got=" + firstFail.got() + " exp=" + firstFail.expected());
+    }
+
+    log.logFire(Thread.currentThread().getName(), transition, true,
+        snapshotMarking(), pinv);
+  }
+
+  // Selección y signal-and-exit
+
+  /**
+   * Despierta exactamente un hilo en espera y le cede el mutex (signal-and-exit).
+   * <p>
+   * Si existen hilos esperando por transiciones sensibilizadas, selecciona una
+   * transición según el modo de política y libera su semáforo asociado. El
+   * mutex no se libera: se transfiere al hilo despertado mediante
+   * {@link Ownership#handoff()}, evitando que compita en la cola de entrada.
+   * <p>
+   * <b>Orden de operaciones:</b> primero se señaliza al waiter
+   * ({@link #signalOneWaiter(int)}) y luego se ejecuta
+   * {@link Ownership#handoff()}. La señalización siempre es efectiva porque
+   * {@link #wakingCandidates()} garantiza que la transición elegida
+   * tiene al menos un waiter, y todo el bloque se ejecuta bajo el mutex sin
+   * liberarlo entre el chequeo y la señalización.
+   * <p>
+   * Si no hay candidatos, libera el mutex mediante
+   * {@link Ownership#release()}. De esta forma, la decisión entre release y
+   * handoff queda resuelta completamente dentro de este método.
+   * <p>
+   * Criterio de selección:
+   * <ul>
+   *   <li>{@code NONE}: la primera transición elegible por índice.</li>
+   *   <li>{@code BALANCED}/{@code PRIORITIZED}: delega en {@link Policy#choose}.</li>
+   * </ul>
+   *
+   * @param ownership posesión lógica que se libera o cede según existan waiters
+   *                  elegibles.
+   */
+  private void selectWaiterOrRelease(Ownership ownership) {
+    List<Integer> wakeEligibleTransitions = wakingCandidates();
+    if (wakeEligibleTransitions.isEmpty()) {
+      ownership.release();
+      return;
+    }
+
+    int selectedTransition;
+    if (!policy.isEnabled()) {
+      selectedTransition = wakeEligibleTransitions.getFirst();
+    } else {
+      selectedTransition = policy.choose(wakeEligibleTransitions);
+    }
+
+    signalOneWaiter(selectedTransition);
+    ownership.handoff();
+  }
+
+  /**
+   * Determina qué transiciones son elegibles para despertar hilos en espera.
+   * <p>
+   * Una transición es elegible si está estructuralmente sensibilizada (según
+   * la matriz de sensibilización de RdP) y tiene al menos un hilo esperando en
+   * su semáforo. Construye una lista de índices de transiciones que cumplen ambos
+   * criterios para que la política pueda seleccionar entre ellas.
+   *
+   * @return lista de índices de transiciones elegibles para despertar.
+   */
+  private List<Integer> wakingCandidates() {
+    List<Integer> wakeEligible = new ArrayList<>();
+    DMatrixRMaj sensitized = rdp.getSensitized();
+    DMatrixRMaj waiting = queues.getWaitingCounts();
+
+    for (int t = 0; t < sensitized.numCols; t++) {
+      boolean isSensitized = (sensitized.get(0, t) == 1.0);
+      boolean hasThreadsWaiting = (waiting.get(0, t) > 0);
+
+      if (isSensitized && hasThreadsWaiting) {
+        wakeEligible.add(t);
+      }
+    }
+
+    return wakeEligible;
+  }
+
+  /**
+   * Despierta un hilo en espera para una transición específica.
+   * <p>
+   * Decrementa el contador de espera asociado y libera exactamente un permiso
+   * en el semáforo de esa transición.
+   * <p>
+   * <b>Precondición:</b> la transición indicada tiene al menos un hilo
+   * esperando. El caller ({@link #selectWaiterOrRelease}) garantiza esta
+   * precondición al elegir la transición desde
+   * {@link #wakingCandidates()}, que filtra por
+   * {@code waitingCount > 0}, y todo el bloque se ejecuta bajo el mutex sin
+   * liberarlo entre el chequeo y esta llamada.
+   *
+   * @param transition índice de la transición a señalizar.
+   */
+  private void signalOneWaiter(int transition) {
+    queues.decrementWaitingCount(transition);
+    queues.getSemaphoreForTransition(transition).release();
+  }
+
+  // Esperas
 
   /**
    * Espera hasta alcanzar ETF para una transición temporizada.
@@ -217,192 +374,11 @@ public class Monitor implements MonitorInterface {
     ownership.wakeFromQueue();
   }
 
-  /**
-   * Dispara la transición y actualiza estructuras de sensibilización/colas.
-   * <p>
-   * Construye vector de disparo, ejecuta disparo en RdP, refresca temporización
-   * para nueva instancia habilitada, libera esperas relevantes y registra
-   * métricas
-   * de transiciones exitosas.
-   *
-   * @param transition transición a disparar.
-   */
-  private boolean fireAndReleaseTransition(int transition, Ownership ownership) {
-    DMatrixRMaj firingVector = createFiringVector(transition);
-    rdp.fireTransition(firingVector);
-    time.updateFromSensitized(rdp.getSensitized());
-    time.onTransitionFired(transition, rdp.getSensitized().get(0, transition) == 1);
-
-    logFireResult(transition);
-    policy.onTransitionFired(transition);
-    return selectWaiterOrRelease(ownership);
-  }
-
-  /**
-   * Registra el resultado de un disparo en el log, incluyendo el chequeo de
-   * P-invariantes.
-   * <p>
-   * Toma una instantánea del marcado actual, evalúa los P-invariantes y, si
-   * hay un fallo, registra un evento {@code PINV_FAIL} antes de registrar el
-   * disparo. Si el servicio de logging es {@code null}, no hace nada.
-   * <p>
-   * Se ejecuta bajo el mutex para preservar el orden observable de los eventos
-   * y garantizar una instantánea consistente del marcado.
-   *
-   * @param transition transición recién disparada.
-   */
-  private void logFireResult(int transition) {
-    if (log == null) {
-      return;
-    }
-    DMatrixRMaj markingMatrix = rdp.getMarcadoActual();
-    List<Invariants.PInvariantResult> results = Invariants.checkPInvariants(markingMatrix, pInvariants);
-    String pinv = "OK";
-    Invariants.PInvariantResult firstFail = null;
-
-    for (Invariants.PInvariantResult r : results) {
-      if (!r.ok()) {
-        firstFail = r;
-        pinv = "FAIL(" + r.name() + ",got=" + r.got() + ",exp=" + r.expected() + ")";
-        break;
-      }
-    }
-
-    if (firstFail != null) {
-      log.logEvent(Thread.currentThread().getName(),
-          "PINV_FAIL name=" + firstFail.name() + " got=" + firstFail.got() + " exp=" + firstFail.expected());
-    }
-
-    log.logFire(Thread.currentThread().getName(), transition, true,
-        snapshotMarking(), pinv);
-  }
-
-  /**
-   * Despierta exactamente un hilo en espera y le cede el mutex (signal-and-exit).
-   * <p>
-   * Si existen hilos esperando por transiciones sensibilizadas, selecciona una
-   * transición según el modo de política y libera su semáforo asociado. El
-   * mutex no se libera: se transfiere al hilo despertado mediante
-   * {@link Ownership#handoff()}, evitando que compita en la cola de entrada.
-   * <p>
-   * <b>Orden de operaciones:</b> primero se señaliza al waiter
-   * ({@link #signalOneWaiter(int)}) y luego se ejecuta
-   * {@link Ownership#handoff()}. La señalización siempre es efectiva porque
-   * {@link #wakingCandidates()} garantiza que la transición elegida
-   * tiene al menos un waiter, y todo el bloque se ejecuta bajo el mutex sin
-   * liberarlo entre el chequeo y la señalización.
-   * <p>
-   * Si no hay candidatos, retorna {@code false} sin tocar el mutex; el caller
-   * es responsable de liberarlo mediante {@link Ownership#release()}.
-   * <p>
-   * Criterio de selección:
-   * <ul>
-   *   <li>{@code NONE}: la primera transición elegible por índice.</li>
-   *   <li>{@code BALANCED}/{@code PRIORITIZED}: delega en {@link Policy#choose}.</li>
-   * </ul>
-   *
-   * @param ownership guardián del monitor que gestiona la cesión o liberación de la exclusión mutua.
-   * @return {@code true} si se despertó a algún hilo (y por tanto se le cede el
-   *         monitor); {@code false} en caso contrario, y el caller debe liberar.
-   */
-  private boolean selectWaiterOrRelease(Ownership ownership) {
-    List<Integer> wakeEligibleTransitions = wakingCandidates();
-    if (wakeEligibleTransitions.isEmpty()) {
-      return false;
-    }
-
-    int selectedTransition;
-    if (!policy.isEnabled()) {
-      selectedTransition = wakeEligibleTransitions.getFirst();
-    } else {
-      selectedTransition = policy.choose(wakeEligibleTransitions);
-    }
-
-    signalOneWaiter(selectedTransition);
-    ownership.handoff();
-    return true;
-  }
-
-  /**
-   * Despierta un hilo en espera para una transición específica.
-   * <p>
-   * Decrementa el contador de espera asociado y libera exactamente un permiso
-   * en el semáforo de esa transición.
-   * <p>
-   * <b>Precondición:</b> la transición indicada tiene al menos un hilo
-   * esperando. El caller ({@link #selectWaiterOrRelease}) garantiza esta
-   * precondición al elegir la transición desde
-   * {@link #wakingCandidates()}, que filtra por
-   * {@code waitingCount > 0}, y todo el bloque se ejecuta bajo el mutex sin
-   * liberarlo entre el chequeo y esta llamada.
-   *
-   * @param transition índice de la transición a señalizar.
-   */
-  private void signalOneWaiter(int transition) {
-    queues.decrementWaitingCount(transition);
-    queues.getSemaphoreForTransition(transition).release();
-  }
-
-  /**
-   * Determina qué transiciones son elegibles para despertar hilos en espera.
-   * <p>
-   * Una transición es elegible si está estructuralmente sensibilizada (según
-   * la matriz de sensibilización de RdP) y tiene al menos un hilo esperando en
-   * su semáforo. Construye una lista de índices de transiciones que cumplen ambos
-   * criterios para que la política pueda seleccionar entre ellas.
-   *
-   * @return lista de índices de transiciones elegibles para despertar.
-   */
-  private List<Integer> wakingCandidates() {
-    List<Integer> wakeEligible = new ArrayList<>();
-    DMatrixRMaj sensitized = rdp.getSensitized();
-    DMatrixRMaj waiting = queues.getWaitingCounts();
-
-    for (int t = 0; t < sensitized.numCols; t++) {
-      boolean isSensitized = (sensitized.get(0, t) == 1.0);
-      boolean hasThreadsWaiting = (waiting.get(0, t) > 0);
-
-      if (isSensitized && hasThreadsWaiting) {
-        wakeEligible.add(t);
-      }
-    }
-
-    return wakeEligible;
-  }
-
   // ============================================================
   // Helpers
   // ============================================================
-  /**
-   * Adquiere el monitor de exclusión mutua de la red.
-   * <p>
-   * Serializa el acceso a estado compartido de RdP y estructuras auxiliares,
-   * para que evaluación temporal y disparo sean atómicos frente a otros hilos.
-   *
-   * @throws InterruptedException si el hilo es interrumpido mientras espera.
-   */
-  private void catchMonitor() throws InterruptedException {
-    entry.acquire();
-  }
 
-  /**
-   * Libera el monitor de exclusión mutua.
-   * <p>
-   * Permite que otros hilos en espera ingresen al ciclo de evaluación/disparo.
-   * 
-   * @throws IllegalStateException si el semáforo queda con más de un permiso tras
-   *                               la liberación.
-   */
-  private void releaseMonitor() {
-    entry.release();
-
-    int after = entry.availablePermits();
-    if (after > 1) {
-      throw new IllegalStateException("Monitor roto: entry quedó con " + after +
-          " permisos tras release de " +
-          Thread.currentThread().getName());
-    }
-  }
+  // Helpers de dominio
 
   /**
    * Valida que un índice de transición pertenezca al rango definido por la
@@ -420,22 +396,6 @@ public class Monitor implements MonitorInterface {
   }
 
   /**
-   * Toma una instantánea del marcado actual de la RdP.
-   * <p>
-   * Convierte la matriz de marcado de EJML a un arreglo de enteros para
-   * facilitar su registro en el log.
-   * 
-   * @return arreglo de enteros representando el marcado actual.
-   */
-  private int[] snapshotMarking() {
-    DMatrixRMaj m = rdp.getMarcadoActual(); // 1xP
-    int[] out = new int[m.numCols];
-    for (int i = 0; i < m.numCols; i++)
-      out[i] = (int) m.get(0, i);
-    return out;
-  }
-
-  /**
    * Crea el vector de disparo unitario para una transición.
    * <p>
    * El vector contiene un único valor 1 en la posición de la transición y 0
@@ -448,6 +408,55 @@ public class Monitor implements MonitorInterface {
     double[] firing = new double[rdp.getIncidencia().numCols];
     firing[transition] = 1;
     return new DMatrixRMaj(firing.length, 1, true, firing);
+  }
+
+  /**
+   * Toma una instantánea del marcado actual de la RdP.
+   * <p>
+   * Convierte la matriz de marcado de EJML a un arreglo de enteros para
+   * facilitar su registro en el log.
+   *
+   * @return arreglo de enteros representando el marcado actual.
+   */
+  private int[] snapshotMarking() {
+    DMatrixRMaj m = rdp.getMarcadoActual(); // 1xP
+    int[] out = new int[m.numCols];
+    for (int i = 0; i < m.numCols; i++)
+      out[i] = (int) m.get(0, i);
+    return out;
+  }
+
+  // Primitivas del mutex
+
+  /**
+   * Adquiere el monitor de exclusión mutua de la red.
+   * <p>
+   * Serializa el acceso a estado compartido de RdP y estructuras auxiliares,
+   * para que evaluación temporal y disparo sean atómicos frente a otros hilos.
+   *
+   * @throws InterruptedException si el hilo es interrumpido mientras espera.
+   */
+  private void catchMonitor() throws InterruptedException {
+    entry.acquire();
+  }
+
+  /**
+   * Libera el monitor de exclusión mutua.
+   * <p>
+   * Permite que otros hilos en espera ingresen al ciclo de evaluación/disparo.
+   *
+   * @throws IllegalStateException si el semáforo queda con más de un permiso tras
+   *                               la liberación.
+   */
+  private void releaseMonitor() {
+    entry.release();
+
+    int after = entry.availablePermits();
+    if (after > 1) {
+      throw new IllegalStateException("Monitor roto: entry quedó con " + after +
+          " permisos tras release de " +
+          Thread.currentThread().getName());
+    }
   }
 
   // ============================================================
@@ -506,8 +515,8 @@ public class Monitor implements MonitorInterface {
     /**
      * Recupera la posesión lógica tras despertar de una cola de transición.
      * <p>
-     * El mutex nunca se perdió: fue cedido por otro hilo vía {@link #handoff()}
-     * o, en algunos interleavings, tomado de cero en el {@code finally} exterior.
+     * El waiter recibió una señal asociada a un handoff y asume la
+     * responsabilidad lógica del mutex sin volver a adquirir {@code entry}.
      */
     public void wakeFromQueue() {
       owned = true;
@@ -557,13 +566,8 @@ public class Monitor implements MonitorInterface {
       }
     }
 
-    /**
-     * Devuelve el conteo actual de hilos en espera por transición.
-     *
-     * @return matriz 1xT con cantidad de hilos esperando por transición.
-     */
-    private DMatrixRMaj getWaitingCounts() {
-      return waitingCount;
+    private Semaphore createSemaphore() {
+      return new Semaphore(0);
     }
 
     /**
@@ -586,6 +590,15 @@ public class Monitor implements MonitorInterface {
     }
 
     /**
+     * Devuelve el conteo actual de hilos en espera por transición.
+     *
+     * @return matriz 1xT con cantidad de hilos esperando por transición.
+     */
+    private DMatrixRMaj getWaitingCounts() {
+      return waitingCount;
+    }
+
+    /**
      * Devuelve el semáforo asociado a una transición.
      *
      * @param transition índice de transición.
@@ -593,10 +606,6 @@ public class Monitor implements MonitorInterface {
      */
     private Semaphore getSemaphoreForTransition(int transition) {
       return queuesList.get(transition);
-    }
-
-    private Semaphore createSemaphore() {
-      return new Semaphore(0);
     }
   }
 }
