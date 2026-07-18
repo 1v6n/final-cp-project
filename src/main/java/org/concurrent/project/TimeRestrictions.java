@@ -24,8 +24,6 @@ public class TimeRestrictions {
     }
 
     public static final long INFINITE_BETA = Long.MAX_VALUE;
-    private static final long TIMING_TOLERANCE_NS = TimeUnit.MILLISECONDS.toNanos(2);
-
     private static class TimingConfig {
         private final long alphaNs;
         private final long betaNs;
@@ -162,11 +160,11 @@ public class TimeRestrictions {
 
         TimingConfig config = timedTransitions.get(transition);
         long elapsed = clockNs.getAsLong() - state.enabledAtNs;
-        if (elapsed + TIMING_TOLERANCE_NS < config.alphaNs) {
+        if (elapsed < config.alphaNs) {
             return FireEvaluation.TOO_EARLY;
         }
 
-        if (elapsed - TIMING_TOLERANCE_NS > config.betaNs) {
+        if (config.betaNs != INFINITE_BETA && elapsed > config.betaNs) {
             return FireEvaluation.NOT_ENABLED;
         }
 
@@ -189,7 +187,7 @@ public class TimeRestrictions {
         }
         TimingConfig config = timedTransitions.get(transition);
         long elapsed = clockNs.getAsLong() - state.enabledAtNs;
-        long remainingNs = Math.max(config.alphaNs - elapsed - TIMING_TOLERANCE_NS, 0L);
+        long remainingNs = Math.max(config.alphaNs - elapsed, 0L);
         long remainingMs = TimeUnit.NANOSECONDS.toMillis(remainingNs);
         if (remainingNs > 0 && remainingMs == 0L) {
             return 1L;
