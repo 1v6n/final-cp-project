@@ -58,30 +58,7 @@ public class Monitor implements MonitorInterface {
     this.log = log;
     queues = new Queues(rdp.getIncidencia().numCols);
     this.policy = policy;
-    time = new TimeRestrictions();
-
-    configureTimedTransitions(timed);
-  }
-
-  /**
-   * Aplica configuración temporal inicial en forma declarativa.
-   * <p>
-   * Si el modo temporizado está activo, registra cada transición con ETF
-   * (alpha) y beta infinito, y sincroniza estado temporal inicial con la
-   * sensibilización actual de la red.
-   *
-   * @param timed indica si deben activarse restricciones temporales.
-   */
-  private void configureTimedTransitions(boolean timed) {
-    if (!timed) {
-      return;
-    }
-    for (int[] transitionConfig : TIMED_TRANSITIONS_BASE_MS) {
-      int transition = transitionConfig[0];
-      long alphaMs = transitionConfig[1];
-      time.setTimedTransition(transition, alphaMs, INFINITE_BETA_MS);
-    }
-    time.updateFromSensitized(rdp.getSensitized());
+    time = new TimeRestrictions(timed, TIMED_TRANSITIONS_BASE_MS);
   }
 
   // ============================================================

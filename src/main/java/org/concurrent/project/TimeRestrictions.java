@@ -51,8 +51,14 @@ public class TimeRestrictions {
     /**
      * Construye el gestor temporal usando {@link System#nanoTime()} como reloj.
      */
-    public TimeRestrictions() {
+    public TimeRestrictions(boolean timed, int[][] timedTransitionsConfig) {
         this(System::nanoTime);
+
+        if (timed) {
+            for (int[] config : timedTransitionsConfig) {
+                setTimedTransition(config[0], config[1], INFINITE_BETA);
+            }
+        }
     }
 
     /**
