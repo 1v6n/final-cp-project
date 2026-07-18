@@ -337,7 +337,7 @@ public class Monitor implements MonitorInterface {
 
     int selectedTransition;
     if (!policy.isEnabled()) {
-      selectedTransition = wakeEligibleTransitions.getFirst();
+      selectedTransition = policy.selectAny(wakeEligibleTransitions);
     } else {
       selectedTransition = policy.choose(wakeEligibleTransitions);
     }
