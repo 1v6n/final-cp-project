@@ -258,7 +258,10 @@ public class Monitor implements MonitorInterface {
     List<Integer> wakeEligibleTransitions = wakingCandidates();
 
     // Para que la selección sticky de reservas se actualice antes de despertar waiters
-    if (policy.isEnabled()) {
+    DMatrixRMaj sensitized = rdp.getSensitized();
+    if (policy.isEnabled()
+        && sensitized.get(0, 6) == 1
+        && sensitized.get(0, 7) == 1) {
       policy.choose(List.of(6, 7));
     }
 
