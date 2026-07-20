@@ -20,7 +20,6 @@ public class Monitor implements MonitorInterface {
   // ============================================================
   // Configuración
   // ============================================================
-  private static final long INFINITE_BETA_MS = TimeRestrictions.INFINITE_BETA;
   /** Configuración base de transiciones temporizadas: {transition, alphaMs}. */
   private static final int[][] TIMED_TRANSITIONS_BASE_MS = {
       { 1, 100 }, { 4, 60 }, { 5, 60 }, { 8, 80 }, { 9, 40 }, { 10, 40 } };
@@ -126,11 +125,7 @@ public class Monitor implements MonitorInterface {
 
     switch (evaluation) {
       case ALLOWED:
-        if (policy.isEnabled()
-            && (transition == 6 || transition == 7)
-            && rdp.getSensitized().get(0, 6) == 1
-            && rdp.getSensitized().get(0, 7) == 1
-            && policy.choose(List.of(6, 7)) != transition) {
+        if (shouldDeferToPolicySelectedReservation(transition)) {
           waitForSensitization(transition, ownership);
           return false;
         }
@@ -150,6 +145,22 @@ public class Monitor implements MonitorInterface {
         throw new IllegalStateException("FireEvaluation no soportada: " +
             evaluation);
     }
+  }
+
+  /**
+   * Indica si una transición de reserva debe ceder el paso a la decisión de la
+   * política cuando ambas reservas están sensibilizadas.
+   *
+   * @param transition transición sensibilizada a evaluar.
+   * @return {@code true} si debe reintentarse más tarde para respetar la
+   *         selección de la política.
+   */
+  private boolean shouldDeferToPolicySelectedReservation(int transition) {
+    if (!policy.isEnabled() || (transition != 6 && transition != 7)) {
+      return false;
+    }
+
+    return policy.choose(List.of(6, 7)) != transition;
   }
 
   // Disparo exitoso
@@ -245,10 +256,9 @@ public class Monitor implements MonitorInterface {
    */
   private void selectWaiterOrRelease(Ownership ownership) {
     List<Integer> wakeEligibleTransitions = wakingCandidates();
-    DMatrixRMaj sensitized = rdp.getSensitized();
-    if (policy.isEnabled()
-        && sensitized.get(0, 6) == 1
-        && sensitized.get(0, 7) == 1) {
+
+    // Para que la selección sticky de reservas se actualice antes de despertar waiters
+    if (policy.isEnabled()) {
       policy.choose(List.of(6, 7));
     }
 

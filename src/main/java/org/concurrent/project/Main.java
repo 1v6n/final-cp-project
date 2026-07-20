@@ -15,7 +15,7 @@ public class Main {
   private static final int TOTAL_RUNS = 186;
   private static final boolean timed = true;
   /** Policy mode applied by the monitor. Change to compare behaviors. */
-  private static final PolicyMode POLICY_MODE = PolicyMode.PRIORITIZED;
+  private static final PolicyMode POLICY_MODE = PolicyMode.BALANCED;
 
   private record WorkerSpec(String name, List<Integer> path, boolean countsCompletion) {
   }
