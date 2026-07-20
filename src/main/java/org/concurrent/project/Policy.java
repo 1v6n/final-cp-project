@@ -306,8 +306,11 @@ public class Policy {
     }
 
     if (isConflictActive(ConflictGroup.RESERVATIONS, candidates)) {
-      int selected = selectForGroup(ConflictGroup.RESERVATIONS);
-      setStickySelection(ConflictGroup.RESERVATIONS, selected);
+      int selected = forcedReservationTransition;
+      if (selected == -1) {
+        selected = selectForGroup(ConflictGroup.RESERVATIONS);
+        setStickySelection(ConflictGroup.RESERVATIONS, selected);
+      }
       return selected;
     }
     // si no hay conflicto, simplemente devolvemos el primero

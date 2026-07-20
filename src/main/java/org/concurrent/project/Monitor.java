@@ -126,6 +126,14 @@ public class Monitor implements MonitorInterface {
 
     switch (evaluation) {
       case ALLOWED:
+        if (policy.isEnabled()
+            && (transition == 6 || transition == 7)
+            && rdp.getSensitized().get(0, 6) == 1
+            && rdp.getSensitized().get(0, 7) == 1
+            && policy.choose(List.of(6, 7)) != transition) {
+          waitForSensitization(transition, ownership);
+          return false;
+        }
         fireAndReleaseTransition(transition, ownership);
         return true;
 
@@ -237,6 +245,13 @@ public class Monitor implements MonitorInterface {
    */
   private void selectWaiterOrRelease(Ownership ownership) {
     List<Integer> wakeEligibleTransitions = wakingCandidates();
+    DMatrixRMaj sensitized = rdp.getSensitized();
+    if (policy.isEnabled()
+        && sensitized.get(0, 6) == 1
+        && sensitized.get(0, 7) == 1) {
+      policy.choose(List.of(6, 7));
+    }
+
     if (wakeEligibleTransitions.isEmpty()) {
       ownership.release();
       return;
