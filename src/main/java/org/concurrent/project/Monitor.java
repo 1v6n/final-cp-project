@@ -17,16 +17,10 @@ import org.ejml.data.DMatrixRMaj;
  * consistente de cada disparo.
  */
 public class Monitor implements MonitorInterface {
-  // ============================================================
-  // Configuración
-  // ============================================================
   /** Configuración base de transiciones temporizadas: {transition, alphaMs}. */
   private static final int[][] TIMED_TRANSITIONS_BASE_MS = {
       { 1, 100 }, { 4, 60 }, { 5, 60 }, { 8, 80 }, { 9, 40 }, { 10, 40 } };
 
-  // ============================================================
-  // Estado
-  // ============================================================
   private final Semaphore entry;
   private final Queues queues;
   private final RdP rdp;
@@ -35,9 +29,6 @@ public class Monitor implements MonitorInterface {
   private final LogService log;
   private final List<Invariants.PInvariant> pInvariants = Invariants.defaultPInvariants();
 
-  // ============================================================
-  // Ciclo de vida
-  // ============================================================
   /**
    * Construye el monitor y configura transiciones temporizadas opcionales.
    * <p>
@@ -60,9 +51,6 @@ public class Monitor implements MonitorInterface {
     time = new TimeRestrictions(timed, TIMED_TRANSITIONS_BASE_MS);
   }
 
-  // ============================================================
-  // Flujo principal (top-down)
-  // ============================================================
   /**
    * Intenta disparar una transición bajo exclusión mutua y semántica temporal
    * débil.
@@ -163,8 +151,6 @@ public class Monitor implements MonitorInterface {
     return policy.choose(List.of(6, 7)) != transition;
   }
 
-  // Disparo exitoso
-
   /**
    * Dispara la transición y resuelve la salida del monitor.
    * <p>
@@ -223,8 +209,6 @@ public class Monitor implements MonitorInterface {
     log.logFire(Thread.currentThread().getName(), transition, true,
         snapshotMarking(), pinv);
   }
-
-  // Selección y signal-and-exit
 
   /**
    * Despierta exactamente un hilo en espera y le cede el mutex (signal-and-exit).
@@ -328,8 +312,6 @@ public class Monitor implements MonitorInterface {
     queues.getSemaphoreForTransition(transition).release();
   }
 
-  // Esperas
-
   /**
    * Espera hasta alcanzar ETF para una transición temporizada.
    * <p>
@@ -379,12 +361,6 @@ public class Monitor implements MonitorInterface {
     ownership.wakeFromQueue();
   }
 
-  // ============================================================
-  // Helpers
-  // ============================================================
-
-  // Helpers de dominio
-
   /**
    * Valida que un índice de transición pertenezca al rango definido por la
    * RdP.
@@ -431,8 +407,6 @@ public class Monitor implements MonitorInterface {
     return out;
   }
 
-  // Primitivas del mutex
-
   /**
    * Adquiere el monitor de exclusión mutua de la red.
    * <p>
@@ -464,9 +438,6 @@ public class Monitor implements MonitorInterface {
     }
   }
 
-  // ============================================================
-  // Clases internas
-  // ============================================================
   /**
    * Posesión lógica del monitor para un único hilo.
    * <p>

@@ -13,9 +13,9 @@ import org.concurrent.project.Policy.PolicyMode;
  */
 public class Main {
   private static final int TOTAL_RUNS = 186;
-  private static final boolean timed = true;
+  private static final boolean timed = false;
   /** Policy mode applied by the monitor. Change to compare behaviors. */
-  private static final PolicyMode POLICY_MODE = PolicyMode.BALANCED;
+  private static final PolicyMode POLICY_MODE = PolicyMode.PRIORITIZED;
 
   private record WorkerSpec(String name, List<Integer> path, boolean countsCompletion) {
   }
