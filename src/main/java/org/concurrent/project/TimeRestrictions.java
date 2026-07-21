@@ -24,8 +24,6 @@ public class TimeRestrictions {
     }
 
     public static final long INFINITE_BETA = Long.MAX_VALUE;
-    private static final long TIMING_TOLERANCE_NS = TimeUnit.MILLISECONDS.toNanos(2);
-
     private static class TimingConfig {
         private final long alphaNs;
         private final long betaNs;
@@ -53,8 +51,14 @@ public class TimeRestrictions {
     /**
      * Construye el gestor temporal usando {@link System#nanoTime()} como reloj.
      */
-    public TimeRestrictions() {
+    public TimeRestrictions(boolean timed, int[][] timedTransitionsConfig) {
         this(System::nanoTime);
+
+        if (timed) {
+            for (int[] config : timedTransitionsConfig) {
+                setTimedTransition(config[0], config[1], INFINITE_BETA);
+            }
+        }
     }
 
     /**
@@ -112,27 +116,22 @@ public class TimeRestrictions {
      *
      * @param transition   número de transición.
      * @param isSensitized {@code true} si la transición está sensibilizada.
-     * @return {@code true} si se detectó una nueva habilitación en esta
-     *         actualización;
-     *         {@code false} en cualquier otro caso.
      */
-    public boolean updateSensitizationState(int transition, boolean isSensitized) {
+    public void updateSensitizationState(int transition, boolean isSensitized) {
         if (!isTimedTransition(transition)) {
-            return false;
+            return;
         }
 
         RuntimeState state = runtimeStates.get(transition);
         if (isSensitized && !state.sensitized) {
             state.sensitized = true;
             state.enabledAtNs = clockNs.getAsLong();
-            return true;
+            return;
         }
 
         if (!isSensitized && state.sensitized) {
             state.sensitized = false;
         }
-
-        return false;
     }
 
     /**
@@ -140,22 +139,13 @@ public class TimeRestrictions {
      * matriz de sensibilización.
      *
      * @param sensitized matriz 1xN de transiciones sensibilizadas.
-     * @return lista de transiciones que pasaron de no sensibilizadas a
-     *         sensibilizadas.
      */
-    public List<Integer> updateFromSensitized(DMatrixRMaj sensitized) {
-        List<Integer> newlyEnabledTransitions = new ArrayList<>();
-
+    public void updateFromSensitized(DMatrixRMaj sensitized) {
         for (Map.Entry<Integer, TimingConfig> entry : timedTransitions.entrySet()) {
             int transition = entry.getKey();
             boolean isSensitized = sensitized.get(0, transition) == 1;
-
-            if (updateSensitizationState(transition, isSensitized)) {
-                newlyEnabledTransitions.add(transition);
-            }
+            updateSensitizationState(transition, isSensitized);
         }
-
-        return newlyEnabledTransitions;
     }
 
     /**
@@ -176,11 +166,11 @@ public class TimeRestrictions {
 
         TimingConfig config = timedTransitions.get(transition);
         long elapsed = clockNs.getAsLong() - state.enabledAtNs;
-        if (elapsed + TIMING_TOLERANCE_NS < config.alphaNs) {
+        if (elapsed < config.alphaNs) {
             return FireEvaluation.TOO_EARLY;
         }
 
-        if (elapsed - TIMING_TOLERANCE_NS > config.betaNs) {
+        if (config.betaNs != INFINITE_BETA && elapsed > config.betaNs) {
             return FireEvaluation.NOT_ENABLED;
         }
 
@@ -203,7 +193,7 @@ public class TimeRestrictions {
         }
         TimingConfig config = timedTransitions.get(transition);
         long elapsed = clockNs.getAsLong() - state.enabledAtNs;
-        long remainingNs = Math.max(config.alphaNs - elapsed - TIMING_TOLERANCE_NS, 0L);
+        long remainingNs = Math.max(config.alphaNs - elapsed, 0L);
         long remainingMs = TimeUnit.NANOSECONDS.toMillis(remainingNs);
         if (remainingNs > 0 && remainingMs == 0L) {
             return 1L;
