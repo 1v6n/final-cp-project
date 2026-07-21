@@ -1,256 +1,141 @@
 @startuml
-title Monitor — Flujo general de fireTransition()
+title Monitor - Flujo general de fireTransition()
 
 autonumber
 hide footbox
 
 actor "Worker" as W
 participant "Monitor" as M
-participant "Ownership\n(local a fireTransition)" as O
-participant "entry\nSemaphore mutex" as E
+participant "Ownership" as O
+participant "entry\nSemaphore" as E
 participant "RdP" as R
 participant "TimeRestrictions" as T
-participant "Invariants" as I
-participant "LogService" as L
 participant "Policy" as P
-participant "Queues\nsemáforos por transición" as Q
+participant "Queues\nsem[t]" as Q
 
-legend left
-  |= Elemento |= Responsabilidad |
-  | entry | Mutex físico del Monitor |
-  | Ownership | Responsabilidad local de liberar o ceder entry |
-  | sem[t] | Cola/condición de espera de la transición t |
-  | handoff() | Cede la responsabilidad sin liberar entry |
-  | wakeFromQueue() | El waiter asume la responsabilidad lógica |
-endlegend
+note over O,E
+  release() libera entry.
+  handoff() transfiere la responsabilidad
+  al waiter sin liberar entry.
+end note
 
 W -> M : fireTransition(t)
 activate M
-
 M -> M : validateTransitionIndex(t)
 M -> O : new Ownership()
-note right of O
-  owned = false
-  La instancia pertenece únicamente
-  a esta llamada fireTransition(t).
-end note
 
-loop hasta disparar o ser interrumpido
-
-  == Adquisición condicional del monitor ==
-
+loop hasta disparar o set interrumpido
   opt !ownership.isOwned()
     M -> O : acquire()
     O -> E : acquire()
-
-    alt entry adquirido
-      E --> O : permiso adquirido
-      O -> O : owned = true
-      note over O,E
-        entry permits = 0
-      end note
-    else InterruptedException esperando entry
-      break finalizar por interrupción
-        M -> M : Thread.currentThread().interrupt()
-        M -> O : finally: release()
-        O -> O : owned == false → no-op
-        M --> W : false
-      end
-    end
+    O -> O : owned = true
   end
-
-  == Evaluación de sensibilización ==
 
   M -> R : getSensitized()[t]
   R --> M : isSensitized
 
-  alt transición NO sensibilizada
-
+  alt transicion no sensibilizada
     group waitForSensitization(t)
       M -> Q : incrementWaitingCount(t)
-      note right of Q
-        El registro ocurre bajo el mutex.
-      end note
-
       M -> O : release()
       O -> E : release()
-      O -> O : owned = false
-      note over O,E
-        entry permits = 1
-      end note
-
       M -> Q : sem[t].acquire()
-
-      alt acquire retorna por signal
-        Q --> M : permiso adquirido
-        M -> M : acquired = true
-        M -> M : finally no decrementa\n(acquired == true)
-        M -> O : wakeFromQueue()
-        O -> O : owned = true
-
-        note over M,O #D5E8D4
-          waitForSensitization() retorna y comienza
-          otra iteración del loop.
-
-          Como owned == true, el waiter omite
-          entry.acquire() y reevalúa las condiciones.
-        end note
-
-      else InterruptedException esperando sem[t]
-        M -> Q : decrementWaitingCount(t)
-        note right of Q
-          Compensa el registro del waiter
-          que no recibió normalmente el signal.
-        end note
-
-        break finalizar por interrupción
-          M -> M : Thread.currentThread().interrupt()
-          M -> O : finally: release()
-          O -> O : owned == false → no-op
-          M --> W : false
-        end
-      end
+      Q --> M : signal
+      M -> O : wakeFromQueue()
     end
+    M -> M : continuar loop
 
-    note over M,Q #FFF2CC
-      La rama anterior representa los caminos normales.
-      La carrera entre signal e interrupt requiere un
-      protocolo de cancelación separado para evitar un
-      handoff sin receptor.
-    end note
-
-  else transición sensibilizada
-
+  else transicion sensibilizada
     M -> T : evaluateFire(t)
     T --> M : FireEvaluation
 
     alt ALLOWED
-
-      group fireAndReleaseTransition(t)
-        M -> M : createFiringVector(t)
-        M -> R : fireTransition(firingVector)
-        R -> R : actualizar marcado\ny sensibilización
-
-        M -> R : getSensitized()
-        R --> M : sensibilización posterior
-        M -> T : updateFromSensitized(sensitized)
-        M -> T : onTransitionFired(t, stillSensitized)
-
-        group logFireResult(t) — bajo el mutex
-          opt log != null
-            M -> R : getMarcadoActual()
-            R --> M : marking
-            M -> I : checkPInvariants(marking, pInvariants)
-            I --> M : results
-
-            opt primer P-invariante fallido
-              M -> L : logEvent(PINV_FAIL)
-            end
-
-            M -> M : snapshotMarking()
-            M -> L : logFire(t, snapshot, pinv)
-          end
-        end
-
-        M -> P : onTransitionFired(t)
-
-        group selectWaiterOrRelease(ownership)
-          M -> R : getSensitized()
-          R --> M : sensitized
-          M -> Q : getWaitingCounts()
-          Q --> M : waitingCounts
-          M -> M : wakingCandidates()
-
-          alt no hay candidatos
-            M -> O : release()
-            O -> E : release()
-            O -> O : owned = false
-            note over O,E
-              No había receptor para handoff:
-              entry permits = 1.
-            end note
-          else existe al menos un candidato
-            alt política deshabilitada
-              M -> M : selected = candidates.getFirst()
-            else política habilitada
-              M -> P : choose(candidates)
-              P --> M : selectedTransition
-            end
-
-            group signalOneWaiter(selectedTransition)
-              M -> Q : decrementWaitingCount(selectedTransition)
-              M -> Q : sem[selectedTransition].release()
-            end
-
-            M -> O : handoff()
-            O -> O : owned = false
-            note over O,E
-              entry NO se libera.
-              El waiter despertado hereda la
-              responsabilidad lógica del mutex.
-            end note
-
-            ref over M,Q
-              Secuencia detallada de ambos hilos:
-              MonitorHandoffSequence.puml
-            end ref
-
-          end
-        end
+      opt t es T6/T7 y ambas estan sensibilizadas
+        M -> P : choose([T6, T7])
+        P --> M : selected sticky
       end
 
-      break disparo completado
-        M -> M : handleSensitizedTransition() retorna true
-        M -> O : finally: release()
-        O -> O : owned == false → no-op
-        M --> W : true
+      alt T6/T7 no es la seleccionada
+        group volver a esperar el turno de politica
+          M -> Q : incrementWaitingCount(t)
+          M -> O : release()
+          O -> E : release()
+          M -> Q : sem[t].acquire()
+          Q --> M : signal
+          M -> O : wakeFromQueue()
+        end
+        M -> M : continuar loop
+
+      else disparo permitido
+        group fireAndReleaseTransition(t)
+          M -> R : fireTransition(firingVector)
+          R -> R : actualizar marcado y sensibilizacion
+          M -> T : actualizar estado temporal posterior
+          M -> M : logFireResult(t)\n(incluye P-invariantes)
+          M -> P : onTransitionFired(t)\n(registrar y limpiar sticky)
+
+          group seleccion post-disparo
+            M -> R : getSensitized()
+            M -> Q : getWaitingCounts()
+            M -> M : wakingCandidates()
+
+            opt politica activa y T6/T7 sensibilizadas
+              M -> P : choose([T6, T7])
+              P --> M : fijar/reusar seleccion sticky
+            end
+
+            alt no hay candidatos para despertar
+              M -> O : release()
+              O -> E : release()
+
+            else hay candidatos
+              alt politica deshabilitada
+                M -> P : selectAny(candidates)
+              else politica habilitada
+                M -> P : choose(candidates)
+              end
+              P --> M : selectedTransition
+
+              M -> Q : decrementWaitingCount(selectedTransition)
+              M -> Q : sem[selectedTransition].release()
+              M -> O : handoff()
+              O -> O : owned = false
+
+              ref over M,Q
+                Detalle del traspaso entre hilos:
+                MonitorHandoffSequence.puml
+              end ref
+            end
+          end
+        end
+
+        break disparo completado
+          M -> O : finally: release()\n(no-op despues de release/handoff)
+          M --> W : true
+        end
       end
 
     else TOO_EARLY
-
       group waitUntilEarliestFireTime(t)
         M -> T : getRemainingToEarliest(t)
         T --> M : remainingMs
-
         M -> O : release()
         O -> E : release()
-        O -> O : owned = false
-
-        opt remainingMs > 0
-          M -> M : Thread.sleep(remainingMs)
-        end
+        M -> M : sleep(remainingMs)
       end
-
-      note over M,E
-        Al terminar el sleep, vuelve al loop,
-        adquiere entry nuevamente y reevalúa
-        sensibilización y temporización.
-      end note
+      M -> M : continuar loop y readquirir entry
 
     else NOT_ENABLED
-
-      break estado temporal inconsistente
-        M -> M : throw IllegalStateException
-        M -> O : finally: release()
-        alt owned == true
-          O -> E : release()
-          O -> O : owned = false
-        else owned == false
-          O -> O : no-op
-        end
-        M --> W : IllegalStateException
-      end
-
+      M -> M : throw IllegalStateException
     end
   end
 end
 
-note over M,O
-  Cualquier InterruptedException restaurada por
-  fireTransition() retorna false. Las excepciones
-  no controladas se propagan después del finally.
+note over M,Q
+  Si una espera es interrumpida, se compensa waitingCount.
+  fireTransition() restaura la interrupcion, libera ownership
+  si corresponde y retorna false.
 end note
 
 deactivate M
-
 @enduml

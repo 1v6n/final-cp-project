@@ -1,0 +1,242 @@
+@startuml
+title Diagrama de clases - Sistema Agencia de Viajes
+
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam linetype ortho
+skinparam packageStyle rectangle
+skinparam nodesep 45
+skinparam ranksep 35
+hide empty members
+
+package "Aplicacion" {
+  class Main {
+    -{static} TOTAL_RUNS: int
+    -{static} timed: boolean
+    -{static} POLICY_MODE: PolicyMode
+    +{static} main(args: String[]): void
+    -{static} createWorkers(...): Thread[]
+    -{static} startThreads(workers: Thread[]): void
+    -{static} awaitCompletion(...): void
+    -{static} stopThreads(...): void
+    -{static} joinThreads(workers: Thread[]): void
+    -{static} printSummary(...): void
+  }
+
+  class "Main::WorkerSpec" as WorkerSpec <<record>> {
+    -name: String
+    -path: List<Integer>
+    -countsCompletion: boolean
+  }
+
+  class Threads <<Runnable>> {
+    -path: List<Integer>
+    -totalInvariants: int
+    -monitor: MonitorInterface
+    -completedInvariants: AtomicInteger
+    -startedInvariants: AtomicInteger
+    -countsCompletion: boolean
+    -running: AtomicBoolean
+    +Threads(path: List<Integer>, monitor: MonitorInterface, ...)
+    +run(): void
+  }
+
+  class ProgressBar <<AutoCloseable>> {
+    -total: int
+    -completed: AtomicInteger
+    -barWidth: int
+    -out: PrintStream
+    -lastPercent: int
+    -completed_printed: boolean
+    +ProgressBar(total: int, completed: AtomicInteger, barWidth: int)
+    +update(): void
+    -render(current: int, percent: int): void
+    +close(): void
+  }
+}
+
+package "Monitor concurrente" {
+  interface MonitorInterface {
+    +fireTransition(transition: int): boolean
+  }
+
+  class Monitor {
+    -{static} TIMED_TRANSITIONS_BASE_MS: int[][]
+    -entry: Semaphore
+    -queues: Queues
+    -rdp: RdP
+    -policy: Policy
+    -time: TimeRestrictions
+    -log: LogService
+    -pInvariants: List<PInvariant>
+    ~Monitor(rdp: RdP, timed: boolean, log: LogService, policy: Policy)
+    +fireTransition(transition: int): boolean
+    -handleSensitizedTransition(transition: int, ownership: Ownership): boolean
+    -shouldDeferToPolicySelectedReservation(transition: int): boolean
+    -fireAndReleaseTransition(transition: int, ownership: Ownership): void
+    -selectWaiterOrRelease(ownership: Ownership): void
+    -wakingCandidates(): List<Integer>
+    -waitForSensitization(transition: int, ownership: Ownership): void
+  }
+
+  class "Monitor::Ownership" as Ownership {
+    -owned: boolean
+    +acquire(): void
+    +release(): void
+    +handoff(): void
+    +wakeFromQueue(): void
+    +isOwned(): boolean
+  }
+
+  class "Monitor::Queues" as Queues {
+    -queuesList: List<Semaphore>
+    -numQueues: int
+    -waitingCount: DMatrixRMaj
+    ~Queues(numQueues: int)
+    -getSemaphoreForTransition(transition: int): Semaphore
+    -getWaitingCounts(): DMatrixRMaj
+    -incrementWaitingCount(transition: int): void
+    -decrementWaitingCount(transition: int): void
+  }
+
+  class Policy {
+    -mode: PolicyMode
+    -forcedAgentTransition: int
+    -forcedReservationTransition: int
+    -agentSuperiorCount: int
+    -agentInferiorCount: int
+    -confirmedReservations: int
+    -cancelledReservations: int
+    -conflictAgentSuperior: int
+    -conflictAgentInferior: int
+    -conflictConfirmed: int
+    -conflictCancelled: int
+    -agentCycle: int
+    -reservationCycle: int
+    +Policy(mode: PolicyMode)
+    +isEnabled(): boolean
+    +choose(candidates: List<Integer>): int
+    +selectAny(candidates: List<Integer>): int
+    +onTransitionFired(transition: int): void
+    +printSummary(): void
+  }
+
+  enum "Policy::PolicyMode" as PolicyMode {
+    NONE
+    BALANCED
+    PRIORITIZED
+  }
+}
+
+package "Red de Petri" {
+  class RdP {
+    -Incidencia: DMatrixRMaj
+    -IncidenciaEntradaTraspuesta: DMatrixRMaj
+    -MarcadoActual: DMatrixRMaj
+    -Sensibilizadas: DMatrixRMaj
+    -M0: double[]
+    -MatrixIncidencia: double[][]
+    -MatrixIncidenciaEntradaTraspuesta: double[][]
+    +RdP()
+    +fireTransition(firingVector: DMatrixRMaj): void
+    -transicionesSensibilizadas(): void
+    +getMarcadoActual(): DMatrixRMaj
+    +getIncidencia(): DMatrixRMaj
+    +getSensitized(): DMatrixRMaj
+  }
+
+  class TimeRestrictions {
+    +{static} INFINITE_BETA: long
+    -timedTransitions: Map<Integer, TimingConfig>
+    -runtimeStates: Map<Integer, RuntimeState>
+    -clockNs: LongSupplier
+    +TimeRestrictions(timed: boolean, timedTransitionsConfig: int[][])
+    ~TimeRestrictions(clockNs: LongSupplier)
+    +setTimedTransition(transition: int, alphaMs: long, betaMs: long): void
+    +isTimedTransition(transition: int): boolean
+    +updateSensitizationState(transition: int, isSensitized: boolean): void
+    +updateFromSensitized(sensitized: DMatrixRMaj): void
+    +evaluateFire(transition: int): FireEvaluation
+    +getRemainingToEarliest(transition: int): long
+    +onTransitionFired(transition: int, isStillSensitized: boolean): void
+  }
+
+  enum "TimeRestrictions::FireEvaluation" as FireEvaluation {
+    ALLOWED
+    TOO_EARLY
+    NOT_ENABLED
+  }
+
+  class "TimeRestrictions::TimingConfig" as TimingConfig {
+    -alphaNs: long
+    -betaNs: long
+  }
+
+  class "TimeRestrictions::RuntimeState" as RuntimeState {
+    -sensitized: boolean
+    -enabledAtNs: long
+  }
+
+  class Invariants <<utility>> {
+    -Invariants()
+    +{static} defaultPInvariants(): List<PInvariant>
+    +{static} checkPInvariants(marking: DMatrixRMaj, invariants: List<PInvariant>): List<PInvariantResult>
+  }
+
+  class "Invariants::PInvariant" as PInvariant {
+    +name: String
+    +places: int[]
+    +expected: int
+    +PInvariant(name: String, places: int[], expected: int)
+  }
+
+  class "Invariants::PInvariantResult" as PInvariantResult <<record>> {
+    +name: String
+    +ok: boolean
+    +got: int
+    +expected: int
+  }
+}
+
+package "Infraestructura" {
+  class LogService <<AutoCloseable>> {
+    -writer: BufferedWriter
+    -tsFmt: DateTimeFormatter
+    +LogService(logPath: Path)
+    +logFire(threadName: String, transition: int, ok: boolean, marking: int[], pinv: String): void
+    +logEvent(threadName: String, event: String): void
+    -writeLine(line: String): void
+    -formatMarking(marking: int[]): String
+    +close(): void
+  }
+}
+
+MonitorInterface <|.. Monitor
+Threads --> MonitorInterface
+
+Main +-- WorkerSpec
+Main ..> Threads
+Main ..> ProgressBar
+Main ..> Monitor
+Main ..> RdP
+Main ..> Policy
+Main ..> LogService
+
+Monitor --> RdP
+Monitor --> Policy
+Monitor *-- TimeRestrictions
+Monitor *-- Queues
+Monitor *-- Ownership
+Monitor --> LogService
+Monitor --> PInvariant
+Monitor ..> Invariants
+
+Policy --> PolicyMode
+TimeRestrictions --> FireEvaluation
+TimeRestrictions *-- TimingConfig
+TimeRestrictions *-- RuntimeState
+
+Invariants +-- PInvariant
+Invariants +-- PInvariantResult
+
+@enduml
