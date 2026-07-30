@@ -1,0 +1,117 @@
+@startuml
+title Rediseño mínimo — Flujo interno del Monitor
+
+skinparam shadowing false
+skinparam activity {
+  BackgroundColor #F8F9FA
+  BorderColor #495057
+  DiamondBackgroundColor #E9ECEF
+  DiamondBorderColor #495057
+  StartColor #2B8A3E
+  EndColor #C92A2A
+}
+
+start
+:fireTransition(transition);
+:validateTransitionIndex(transition);
+:crear Ownership local;
+:done = false;
+:result = false;
+:failure = null;
+
+while (done == false?) is (sí)
+  if (ownership.isOwned()?) then (no)
+    :ownership.acquire();
+    note right
+      Bloquea en entry.acquire().
+      Al retornar posee el monitor.
+    end note
+  endif
+
+  if (rdp.isSensitized(transition)?) then (no)
+    partition waitForSensitization {
+      :queues.incrementWaitingCount(transition);
+      :ownership.release();
+      :queues.getSemaphoreForTransition(transition).acquire();
+      :ownership.wakeFromQueue();
+    }
+    note right
+      El hilo vuelve al inicio del ciclo
+      con ownership recibido por handoff.
+    end note
+
+  else (sí)
+    :evaluation = time.evaluateFire(transition);
+
+    if (evaluation == NOT_ENABLED?) then (sí)
+      #F8D7DA:failure = IllegalStateException;
+      :done = true;
+
+    elseif (evaluation == TOO_EARLY?) then (sí)
+      partition waitUntilEarliestFireTime {
+        :ownership.release();
+        :time.awaitUntilEarliestFireTime(transition);
+      }
+      note right
+        TimeRestrictions calcula la demora
+        y ejecuta Thread.sleep().
+        Al continuar se readquiere entry.
+      end note
+
+    else (ALLOWED)
+      note right
+        No se consulta Policy.
+        No hay deferral ni sticky.
+      end note
+
+      partition fireAndReleaseTransition {
+        :rdp.fireTransition(createFiringVector(transition));
+        :time.updateFromSensitized(rdp.getSensitized());
+        :time.onTransitionFired(transition, stillSensitized);
+        :logFireResult(transition);
+        :policy.onTransitionFired(transition);
+
+        partition selectWaiterOrRelease {
+          :candidates = wakingCandidates();
+
+          if (candidates.isEmpty()?) then (sí)
+            :ownership.release();
+          else (no)
+            :selected = policy.choose(candidates);
+            :queues.signalOne(selected);
+            :ownership.handoff();
+          endif
+        }
+      }
+
+      :result = true;
+      :done = true;
+    endif
+  endif
+endwhile (no)
+
+note right
+  wakingCandidates() incluye una transición sólo si:
+  rdp.isSensitized(t) && queues.hasWaiters(t).
+
+  Policy recibe únicamente candidatos efectivos.
+end note
+
+:finally ownership.release();
+note right
+  Es no-op si el mutex ya fue liberado
+  o transferido mediante handoff.
+
+  Si acquire(), await o sleep son interrumpidos,
+  el catch restaura la interrupción, conserva
+  result = false y continúa por este finally.
+end note
+
+if (failure != null?) then (sí)
+  #F8D7DA:throw failure;
+else (no)
+  :return result;
+endif
+stop
+
+@enduml
