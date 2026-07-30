@@ -2,9 +2,7 @@ package org.concurrent.project;
 
 import org.ejml.data.DMatrixRMaj;
 
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.function.LongSupplier;
@@ -199,6 +197,20 @@ public class TimeRestrictions {
             return 1L;
         }
         return remainingMs;
+    }
+
+    /**
+     * Espera hasta el próximo instante de disparo permitido de una transición.
+     * El cálculo de la demora queda encapsulado junto al estado temporal.
+     *
+     * @param transition transición en estado {@link FireEvaluation#TOO_EARLY}.
+     * @throws InterruptedException si el hilo es interrumpido durante la espera.
+     */
+    void awaitUntilEarliestFireTime(int transition) throws InterruptedException {
+        long remainingMs;
+        while ((remainingMs = getRemainingToEarliest(transition)) > 0) {
+            Thread.sleep(remainingMs);
+        }
     }
 
     /**
