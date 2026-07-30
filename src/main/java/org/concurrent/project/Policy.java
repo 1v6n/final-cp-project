@@ -9,32 +9,28 @@ import java.util.concurrent.ThreadLocalRandom;
  */
 public class Policy {
   public enum PolicyMode {
-    NONE,
-    BALANCED,
-    PRIORITIZED
+    NONE, BALANCED, PRIORITIZED
   }
 
   private enum ConflictGroup {
     AGENTS, RESERVATIONS, NONE
   }
 
+  private static final int AGENT_PREFERRED = 2;
+  private static final int AGENT_PREFERRED_PERCENT = 75;
+  private static final int RESERVATION_PREFERRED = 6;
+  private static final int RESERVATION_PREFERRED_PERCENT = 80;
+
   private final PolicyMode mode;
 
-  // Balance toggles
-  private boolean lastAgentWasSuperior = false;
-  private boolean lastReservationWasConfirmed = false;
-
-  // Sticky decisions by conflict group
-  private int forcedAgentTransition = -1;
-  private int forcedReservationTransition = -1;
+  private int agentResidue;
+  private int reservationResidue;
 
   // Contadores reales
   private int agentInferiorCount;
   private int agentSuperiorCount;
   private int confirmedReservations;
   private int cancelledReservations;
-  private int reservationCycle;
-  private int agentCycle;
 
   // Contadores SOLO en conflictos reales
   private int conflictAgentSuperior;
@@ -50,23 +46,22 @@ public class Policy {
    */
   public Policy(PolicyMode mode) {
     this.mode = mode;
+    this.agentResidue = 0;
+    this.reservationResidue = 0;
     this.conflictConfirmed = 0;
     this.conflictCancelled = 0;
     this.cancelledReservations = 0;
     this.confirmedReservations = 0;
     this.agentInferiorCount = 0;
     this.agentSuperiorCount = 0;
-    this.reservationCycle = 0;
-    this.agentCycle = 0;
   }
 
   /**
    * Indica si la política de selección debe aplicarse.
    * <p>
-   * En modo {@code PolicyMode.NONE} no se aplica ninguna política propia: el
-   * monitor despierta la primera transición elegible por índice (signal-and-exit)
-   * y le cede el mutex. En los modos restantes, la política interviene para
-   * seleccionar qué transición despertar ante conflictos.
+   * En modo {@code PolicyMode.NONE} no se aplica una prioridad: se elige un
+   * candidato efectivo al azar. En los modos restantes, la política interviene
+   * sólo ante conflictos reales.
    *
    * @return {@code true} si la política está activa (BALANCED o PRIORITIZED).
    */
@@ -75,111 +70,102 @@ public class Policy {
   }
 
   /**
-   * Selecciona una transición de agente (T2 o T3) de manera balanceada,
-   * alternando
-   * entre la transición superior (T2) e inferior (T3) en cada selección.
+   * Selecciona una transición de la lista de candidatos según la política
+   * definida.
+   * <p>
+   * En modo {@code NONE} se elige un candidato al azar. En los demás modos,
+   * Bresenham sólo se aplica cuando las dos ramas de un conflicto son
+   * candidatas reales. Si no hay conflicto se devuelve el primer candidato.
    *
-   * @return la transición seleccionada (2 para superior, 3 para inferior) según
-   *         el patrón de balanceo definido.
+   * @param candidates la lista de transiciones habilitadas actualmente.
+   * @return la transición seleccionada por la política para disparar.
+   * @throws IllegalArgumentException si la lista de candidatos es nula o vacía.
    */
-  private int selectBalancedAgent() {
-    lastAgentWasSuperior = !lastAgentWasSuperior;
-    return lastAgentWasSuperior ? 3 : 2;
-  }
-
-  /**
-   * Selecciona una transición de reserva (T6 o T7) de manera balanceada,
-   * alternando
-   * entre la transición de reserva confirmada (T6) y cancelada (T7) en cada
-   * selección.
-   *
-   * @return la transición seleccionada (6 para confirmada, 7 para cancelada)
-   *         según el patrón de balanceo definido.
-   */
-  private int selectBalancedReservation() {
-    lastReservationWasConfirmed = !lastReservationWasConfirmed;
-    return lastReservationWasConfirmed ? 6 : 7;
-  }
-
-  /**
-   * Selecciona una transición de reserva (T6 o T7) con prioridad, eligiendo la
-   * transición de reserva confirmada (T6) en 4 de cada 5 selecciones, y la
-   * transición de reserva cancelada (T7) en 1 de cada 5 selecciones.
-   *
-   * @return la transición seleccionada (6 para confirmada, 7 para cancelada)
-   *         según el patrón de prioridad definido.
-   */
-  private int selectPrioritizedReservation() {
-    reservationCycle = (reservationCycle + 1) % 5;
-
-    if (reservationCycle < 4) {
-      return 6; // 4 de cada 5
-    } else {
-      return 7; // 1 de cada 5
+  public int choose(List<Integer> candidates) throws IllegalArgumentException {
+    if (candidates == null || candidates.isEmpty()) {
+      throw new IllegalArgumentException(
+          "Candidates list cannot be null or empty");
     }
-  }
 
-  /**
-   * Selecciona una transición de agente (T2 o T3) con prioridad, eligiendo la
-   * transición superior (T2) en 3 de cada 4 selecciones, y la transición inferior
-   * (T3) en 1 de cada 4 selecciones.
-   *
-   * @return la transición seleccionada (2 para superior, 3 para inferior) según
-   *         el patrón de prioridad definido.
-   */
-  private int selectPrioritizedAgent() {
-    agentCycle = (agentCycle + 1) % 4;
-
-    if (agentCycle < 3) {
-      return 2; // superior
-    } else {
-      return 3; // inferior
+    if (!isEnabled()) {
+      return selectAny(candidates);
     }
+
+    ConflictGroup group = activeConflictIn(candidates);
+    if (group == ConflictGroup.NONE) {
+      return candidates.getFirst();
+    }
+
+    int preferredPercent = mode == PolicyMode.BALANCED ? 50
+        : group == ConflictGroup.AGENTS
+            ? AGENT_PREFERRED_PERCENT
+            : RESERVATION_PREFERRED_PERCENT;
+    return selectByPercentage(group, preferredPercent);
   }
 
   /**
-   * Registra el disparo real de una transición, actualizando los contadores
-   * globales para agentes y reservas según corresponda, y también registra la
-   * decisión de política tomada en un contexto de conflicto activo si la
-   * transición disparada coincide con una selección sticky activa.
+   * Registra un disparo real en los contadores globales. Las decisiones de
+   * conflicto se registran al seleccionar el waiter, no al dispararlo.
    *
    * @param transition la transición que se ha disparado.
    */
   public void onTransitionFired(int transition) {
     recordRealFire(transition);
-    recordAndClearStickyConflictDecisionIfNeeded(transition);
-  }
-
-  private void recordAndClearStickyConflictDecisionIfNeeded(int transition) {
-    if (forcedAgentTransition == transition) {
-      recordConflictDecision(transition);
-      forcedAgentTransition = -1;
-      return;
-    }
-    if (forcedReservationTransition == transition) {
-      recordConflictDecision(transition);
-      forcedReservationTransition = -1;
-    }
   }
 
   /**
-   * Registra la decisión de política tomada en un contexto de conflicto activo,
-   * actualizando los contadores correspondientes según la transición que se
-   * disparó.
-   * <p>
-   * Esta función se llama cuando una transición que fue seleccionada como
-   * "sticky" se dispara, lo que indica que la política tomó una decisión en un
-   * contexto de conflicto activo.
-   * 
-   * @param chosenTransition la transición que se disparó y que fue seleccionada
-   *                         como "sticky" por la política, utilizada para
-   *                         actualizar los contadores de acuerdo a si es un
-   *                         disparo de agente superior, agente inferior, reserva
-   *                         confirmada o reserva cancelada en un contexto de
-   *                         conflicto.
+   * Detecta el primer conflicto real presente en los candidatos.
+   *
+   * @param candidates transiciones sensibilizadas con waiter existente.
+   * @return {@code AGENTS}, {@code RESERVATIONS} o {@code NONE}. Los agentes
+   *         conservan prioridad si ambos conflictos están presentes.
    */
-  private void recordConflictDecision(int chosenTransition) {
-    switch (chosenTransition) {
+  private ConflictGroup activeConflictIn(List<Integer> candidates) {
+    if (candidates.contains(2) && candidates.contains(3)) {
+      return ConflictGroup.AGENTS;
+    }
+    if (candidates.contains(6) && candidates.contains(7)) {
+      return ConflictGroup.RESERVATIONS;
+    }
+    return ConflictGroup.NONE;
+  }
+
+  /**
+   * Aplica Bresenham al residuo independiente del grupo de conflicto.
+   *
+   * @param group            grupo con ambas ramas como candidatos efectivos.
+   * @param preferredPercent porcentaje de la transición preferida.
+   * @return transición preferida si hubo carry de 100; alternativa si no.
+   */
+  private int selectByPercentage(ConflictGroup group, int preferredPercent) {
+    int residue = switch (group) {
+      case AGENTS -> agentResidue;
+      case RESERVATIONS -> reservationResidue;
+      case NONE ->
+        throw new IllegalArgumentException("No hay conflicto para seleccionar");
+    };
+
+    int accumulated = residue + preferredPercent;
+    boolean selectPreferred = accumulated >= 100;
+    int newResidue = selectPreferred ? accumulated - 100 : accumulated;
+    int selected = switch (group) {
+      case AGENTS -> selectPreferred ? AGENT_PREFERRED : 3;
+      case RESERVATIONS -> selectPreferred ? RESERVATION_PREFERRED : 7;
+      case NONE ->
+        throw new IllegalArgumentException("No hay conflicto para seleccionar");
+    };
+
+    if (group == ConflictGroup.AGENTS) {
+      agentResidue = newResidue;
+    } else {
+      reservationResidue = newResidue;
+    }
+    recordConflictDecision(selected);
+    return selected;
+  }
+
+  private void recordConflictDecision(int selected) {
+    switch (selected) {
       case 2 -> conflictAgentSuperior++;
       case 3 -> conflictAgentInferior++;
       case 6 -> conflictConfirmed++;
@@ -189,15 +175,6 @@ public class Policy {
     }
   }
 
-  /**
-   * Registra el disparo real de una transición, actualizando los contadores
-   * globales para agentes y reservas según corresponda.
-   * 
-   * @param transition la transición que se ha disparado, utilizada para
-   *                   actualizar los contadores de acuerdo a si es un disparo de
-   *                   agente superior, agente inferior, reserva confirmada o
-   *                   reserva cancelada.
-   */
   private void recordRealFire(int transition) {
     switch (transition) {
       case 2 -> agentSuperiorCount++;
@@ -210,131 +187,24 @@ public class Policy {
   }
 
   /**
-   * Selecciona una transición para disparar dentro del grupo de conflicto
-   * especificado, según la política de balanceo o prioridad definida.
-   * 
-   * @param group el grupo de conflicto para el cual se desea seleccionar una
-   *              transición (AGENTS o RESERVATIONS).
-   * @return la transición seleccionada por la política para el grupo de conflicto
-   *         especificado.
-   */
-  private int selectForGroup(ConflictGroup group) {
-    return switch (group) {
-      case AGENTS ->
-        (mode == PolicyMode.BALANCED) ? selectBalancedAgent()
-            : selectPrioritizedAgent();
-      case RESERVATIONS ->
-        (mode == PolicyMode.BALANCED) ? selectBalancedReservation()
-            : selectPrioritizedReservation();
-      case NONE -> -1;
-    };
-  }
-
-  /**
-   * Determina si el conflicto para el grupo dado está activo, es decir, si ambas
-   * transiciones en conflicto están habilitadas en la lista de candidatos actual.
-   * 
-   * @param group            el grupo de conflicto para el cual se desea verificar
-   *                         si el conflicto está activo (AGENTS o RESERVATIONS).
-   * @param currentlyEnabled la lista de transiciones actualmente habilitadas
-   *                         (candidatos) en el monitor de disparo.
-   * @return true si el conflicto para el grupo especificado está activo (ambas
-   *         transiciones en conflicto están habilitadas), o false si no hay
-   *         conflicto activo para ese grupo.
-   */
-  private boolean isConflictActive(ConflictGroup group,
-      List<Integer> currentlyEnabled) {
-    return switch (group) {
-      case AGENTS ->
-        currentlyEnabled.contains(2) && currentlyEnabled.contains(3);
-      case RESERVATIONS ->
-        currentlyEnabled.contains(6) && currentlyEnabled.contains(7);
-      case NONE -> false;
-    };
-  }
-
-  /**
-   * Establece una selección "sticky" para el grupo de conflicto dado.
-   * <p>
-   * Esta selección se mantendrá hasta que una de las transiciones en conflicto se
-   * dispare, momento en el cual se registrará la decisión de política y se
-   * limpiará la selección sticky.
-   * 
-   * @param group      el grupo de conflicto para el cual se establece la
-   *                   selección sticky (AGENTS o RESERVATIONS).
-   * @param transition la transición seleccionada que se mantendrá como sticky
-   *                   para el grupo especificado.
-   */
-  private void setStickySelection(ConflictGroup group, int transition) {
-    switch (group) {
-      case AGENTS -> forcedAgentTransition = transition;
-      case RESERVATIONS -> forcedReservationTransition = transition;
-      case NONE -> {
-      }
-    }
-  }
-
-  /**
-   * Selecciona una transición de la lista de candidatos según la política
-   * definida.
-   * <p>
-   * Este método solo debe usarse cuando la política está activa. En modo
-   * {@code PolicyMode.NONE}, la estrategia de wake-up se resuelve en el monitor.
-   * <p>
-   * Si hay un conflicto activo (ambas transiciones habilitadas), se selecciona
-   * según la política de balanceo o prioridad. Si no hay conflicto, se devuelve
-   * el primer candidato.
-   * 
-   * @param candidates la lista de transiciones habilitadas actualmente.
-   * @return la transición seleccionada por la política para disparar.
-   * @throws IllegalArgumentException si la lista de candidatos es nula o vacía.
-   * @throws IllegalStateException    si se invoca en modo
-   *                                  {@code PolicyMode.NONE}.
-   */
-  public int choose(List<Integer> candidates) throws IllegalArgumentException {
-    if (candidates == null || candidates.isEmpty()) {
-      throw new IllegalArgumentException("Candidates list cannot be null or empty");
-    }
-    if (!isEnabled()) {
-      throw new IllegalStateException("Policy.choose() should not be used when mode is NONE");
-    }
-
-    if (isConflictActive(ConflictGroup.AGENTS, candidates)) {
-      int selected = selectForGroup(ConflictGroup.AGENTS);
-      setStickySelection(ConflictGroup.AGENTS, selected);
-      return selected;
-    }
-
-    if (isConflictActive(ConflictGroup.RESERVATIONS, candidates)) {
-      int selected = forcedReservationTransition;
-      if (selected == -1) {
-        selected = selectForGroup(ConflictGroup.RESERVATIONS);
-        setStickySelection(ConflictGroup.RESERVATIONS, selected);
-      }
-      return selected;
-    }
-    // si no hay conflicto, simplemente devolvemos el primero
-    return candidates.getFirst();
-  }
-
-  /**
-   * Elige cualquier transicion candidata a ser disparada usando un generador
+   * Elige cualquier transición candidata a set disparada usando un generador
    * de número aleatorio.
    *
    * @param candidates Lista de candidatos a elegir
    * @return número de transición a disparar
    */
   public int selectAny(List<Integer> candidates) {
-    return candidates.get(ThreadLocalRandom.current().nextInt(candidates.size()));
+    return candidates.get(
+        ThreadLocalRandom.current().nextInt(candidates.size()));
   }
 
   /**
-   * Imprime un resumen detallado de los resultados de la ejecución, incluyendo el
-   * total de disparos, la cantidad de disparos en conflicto, la distribución de
-   * disparos entre las transiciones superiores e inferiores, y los porcentajes
-   * correspondientes tanto para los casos en conflicto como para el total global.
-   * También muestra el total real de disparos registrados para agentes y
-   * reservas.
+   * Imprime un resumen detallado de los resultados de la ejecución, incluyendo
+   * el total de disparos, la cantidad de disparos en conflicto, la distribución
+   * de disparos entre las transiciones superiores e inferiores, y los
+   * porcentajes correspondientes tanto para los casos en conflicto como para el
+   * total global. También muestra el total real de disparos registrados para
+   * agentes y reservas.
    */
   public void printSummary() {
     int totalAgents = agentInferiorCount + agentSuperiorCount;
@@ -349,31 +219,41 @@ public class Policy {
         .append("================= RESULTADOS =================")
         .append(System.lineSeparator())
         .append(System.lineSeparator())
-        .append("Policy mode: ").append(mode)
+        .append("Policy mode: ")
+        .append(mode)
         .append(System.lineSeparator())
         .append(System.lineSeparator())
         .append("--- AGENTES (T2 vs T3) ---")
         .append(System.lineSeparator())
-        .append("Total disparos: ").append(totalAgents).append(System.lineSeparator())
-        .append("  En conflicto: ").append(totalConflictAgents)
+        .append("Total disparos: ")
+        .append(totalAgents)
         .append(System.lineSeparator())
-        .append("    T2 (superior): ").append(conflictAgentSuperior)
+        .append("  En conflicto: ")
+        .append(totalConflictAgents)
         .append(System.lineSeparator())
-        .append("    T3 (inferior): ").append(conflictAgentInferior)
+        .append("    T2 (superior): ")
+        .append(conflictAgentSuperior)
+        .append(System.lineSeparator())
+        .append("    T3 (inferior): ")
+        .append(conflictAgentInferior)
         .append(System.lineSeparator());
 
     if (totalConflictAgents > 0) {
-      summary.append(String.format("    %% Superior (conflicto): %.2f%%%n",
-          100.0 * conflictAgentSuperior / totalConflictAgents));
+      summary.append(
+          String.format("    %% Superior (conflicto): %.2f%%%n",
+              100.0 * conflictAgentSuperior / totalConflictAgents));
     }
 
-    summary.append("  Sin conflicto: ").append(forcedAgents)
+    summary.append("  Sin conflicto: ")
+        .append(forcedAgents)
         .append(System.lineSeparator())
         .append("  TOTAL GLOBAL:")
         .append(System.lineSeparator())
-        .append("    T2: ").append(agentSuperiorCount)
+        .append("    T2: ")
+        .append(agentSuperiorCount)
         .append(System.lineSeparator())
-        .append("    T3: ").append(agentInferiorCount)
+        .append("    T3: ")
+        .append(agentInferiorCount)
         .append(System.lineSeparator());
 
     if (totalAgents > 0) {
@@ -384,32 +264,41 @@ public class Policy {
     summary.append(System.lineSeparator())
         .append("--- RESERVAS (T6 vs T7) ---")
         .append(System.lineSeparator())
-        .append("Total disparos: ").append(totalReservations)
+        .append("Total disparos: ")
+        .append(totalReservations)
         .append(System.lineSeparator())
-        .append("  En conflicto: ").append(totalConflictReservations)
+        .append("  En conflicto: ")
+        .append(totalConflictReservations)
         .append(System.lineSeparator())
-        .append("    T6 (confirmadas): ").append(conflictConfirmed)
+        .append("    T6 (confirmadas): ")
+        .append(conflictConfirmed)
         .append(System.lineSeparator())
-        .append("    T7 (canceladas): ").append(conflictCancelled)
+        .append("    T7 (canceladas): ")
+        .append(conflictCancelled)
         .append(System.lineSeparator());
 
     if (totalConflictReservations > 0) {
-      summary.append(String.format("    %% Confirmadas (conflicto): %.2f%%%n",
-          100.0 * conflictConfirmed / totalConflictReservations));
+      summary.append(
+          String.format("    %% Confirmadas (conflicto): %.2f%%%n",
+              100.0 * conflictConfirmed / totalConflictReservations));
     }
 
-    summary.append("  Sin conflicto: ").append(forcedReservations)
+    summary.append("  Sin conflicto: ")
+        .append(forcedReservations)
         .append(System.lineSeparator())
         .append("  TOTAL GLOBAL:")
         .append(System.lineSeparator())
-        .append("    T6: ").append(confirmedReservations)
+        .append("    T6: ")
+        .append(confirmedReservations)
         .append(System.lineSeparator())
-        .append("    T7: ").append(cancelledReservations)
+        .append("    T7: ")
+        .append(cancelledReservations)
         .append(System.lineSeparator());
 
     if (totalReservations > 0) {
-      summary.append(String.format("    %% Confirmadas (global): %.2f%%%n",
-          100.0 * confirmedReservations / totalReservations));
+      summary.append(
+          String.format("    %% Confirmadas (global): %.2f%%%n",
+              100.0 * confirmedReservations / totalReservations));
     }
 
     summary.append(System.lineSeparator())
