@@ -78,18 +78,25 @@ public class Monitor implements MonitorInterface {
         if (!ownership.isOwned()) {
           ownership.acquire();
         }
-        boolean isSensitized = (rdp.getSensitized().get(0, transition) == 1);
-
-        if (isSensitized) {
-          boolean transitionFired = handleSensitizedTransition(transition, ownership);
-
-          if (transitionFired) {
-            return true;
-          }
+        if (!rdp.isSensitized(transition)) {
+          waitForSensitization(transition, ownership);
           continue;
         }
 
-        waitForSensitization(transition, ownership);
+        switch (time.evaluateFire(transition)) {
+          case ALLOWED:
+            fireAndReleaseTransition(transition, ownership);
+            return true;
+
+          case TOO_EARLY:
+            waitUntilEarliestFireTime(transition, ownership);
+            continue;
+
+          case NOT_ENABLED:
+            throw new IllegalStateException(
+                "Estado inconsistente: transición sensibilizada en RdP pero "
+                    + "NOT_ENABLED en temporización. T" + transition);
+        }
       }
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
@@ -97,58 +104,6 @@ public class Monitor implements MonitorInterface {
     } finally {
       ownership.release();
     }
-  }
-
-  /**
-   * Resuelve el flujo de una transición sensibilizada según su evaluación
-   * temporal.
-   *
-   * @param transition transición sensibilizada a evaluar.
-   * @return {@code true} si la transición fue disparada; {@code false} si era
-   *         demasiado temprano y debe reintentarse después de la espera.
-   * @throws InterruptedException si el hilo es interrumpido durante una espera.
-   */
-  private boolean handleSensitizedTransition(int transition, Ownership ownership) throws InterruptedException {
-    TimeRestrictions.FireEvaluation evaluation = time.evaluateFire(transition);
-
-    switch (evaluation) {
-      case ALLOWED:
-        if (shouldDeferToPolicySelectedReservation(transition)) {
-          waitForSensitization(transition, ownership);
-          return false;
-        }
-        fireAndReleaseTransition(transition, ownership);
-        return true;
-
-      case TOO_EARLY:
-        waitUntilEarliestFireTime(transition, ownership);
-        return false;
-
-      case NOT_ENABLED:
-        throw new IllegalStateException(
-            "Estado inconsistente: transición sensibilizada en RdP pero "
-                + "NOT_ENABLED en temporización. T" + transition);
-
-      default:
-        throw new IllegalStateException("FireEvaluation no soportada: " +
-            evaluation);
-    }
-  }
-
-  /**
-   * Indica si una transición de reserva debe ceder el paso a la decisión de la
-   * política cuando ambas reservas están sensibilizadas.
-   *
-   * @param transition transición sensibilizada a evaluar.
-   * @return {@code true} si debe reintentarse más tarde para respetar la
-   *         selección de la política.
-   */
-  private boolean shouldDeferToPolicySelectedReservation(int transition) {
-    if (!policy.isEnabled() || (transition != 6 && transition != 7)) {
-      return false;
-    }
-
-    return policy.choose(List.of(6, 7)) != transition;
   }
 
   /**
@@ -229,11 +184,8 @@ public class Monitor implements MonitorInterface {
    * {@link Ownership#release()}. De esta forma, la decisión entre release y
    * handoff queda resuelta completamente dentro de este método.
    * <p>
-   * Criterio de selección:
-   * <ul>
-   *   <li>{@code NONE}: la primera transición elegible por índice.</li>
-   *   <li>{@code BALANCED}/{@code PRIORITIZED}: delega en {@link Policy#choose}.</li>
-   * </ul>
+   * La política recibe únicamente candidatos efectivos y decide incluso en
+   * modo {@code NONE}, donde elige uno al azar.
    *
    * @param ownership posesión lógica que se libera o cede según existan waiters
    *                  elegibles.
@@ -241,25 +193,12 @@ public class Monitor implements MonitorInterface {
   private void selectWaiterOrRelease(Ownership ownership) {
     List<Integer> wakeEligibleTransitions = wakingCandidates();
 
-    // Para que la selección sticky de reservas se actualice antes de despertar waiters
-    DMatrixRMaj sensitized = rdp.getSensitized();
-    if (policy.isEnabled()
-        && sensitized.get(0, 6) == 1
-        && sensitized.get(0, 7) == 1) {
-      policy.choose(List.of(6, 7));
-    }
-
     if (wakeEligibleTransitions.isEmpty()) {
       ownership.release();
       return;
     }
 
-    int selectedTransition;
-    if (!policy.isEnabled()) {
-      selectedTransition = policy.selectAny(wakeEligibleTransitions);
-    } else {
-      selectedTransition = policy.choose(wakeEligibleTransitions);
-    }
+    int selectedTransition = policy.choose(wakeEligibleTransitions);
 
     signalOneWaiter(selectedTransition);
     ownership.handoff();
@@ -277,14 +216,8 @@ public class Monitor implements MonitorInterface {
    */
   private List<Integer> wakingCandidates() {
     List<Integer> wakeEligible = new ArrayList<>();
-    DMatrixRMaj sensitized = rdp.getSensitized();
-    DMatrixRMaj waiting = queues.getWaitingCounts();
-
-    for (int t = 0; t < sensitized.numCols; t++) {
-      boolean isSensitized = (sensitized.get(0, t) == 1.0);
-      boolean hasThreadsWaiting = (waiting.get(0, t) > 0);
-
-      if (isSensitized && hasThreadsWaiting) {
+    for (int t = 0; t < rdp.getIncidencia().numCols; t++) {
+      if (rdp.isSensitized(t) && queues.hasWaiters(t)) {
         wakeEligible.add(t);
       }
     }
@@ -308,26 +241,20 @@ public class Monitor implements MonitorInterface {
    * @param transition índice de la transición a señalizar.
    */
   private void signalOneWaiter(int transition) {
-    queues.decrementWaitingCount(transition);
-    queues.getSemaphoreForTransition(transition).release();
+    queues.signalOne(transition);
   }
 
   /**
    * Espera hasta alcanzar ETF para una transición temporizada.
    * <p>
-   * Libera el monitor antes de esperar y duerme una única vez por el
-   * tiempo restante hacia ETF.
+   * Libera el monitor antes de delegar la espera temporal.
    *
    * @param transition transición en estado {@code TOO_EARLY}.
    * @throws InterruptedException si el hilo es interrumpido durante la espera.
    */
   private void waitUntilEarliestFireTime(int transition, Ownership ownership) throws InterruptedException {
-    long remainingMs = time.getRemainingToEarliest(transition);
     ownership.release();
-
-    if (remainingMs > 0) {
-      Thread.sleep(remainingMs);
-    }
+    time.awaitUntilEarliestFireTime(transition);
   }
 
   /**
@@ -565,13 +492,13 @@ public class Monitor implements MonitorInterface {
       waitingCount.set(0, transition, Math.max(0, current - 1));
     }
 
-    /**
-     * Devuelve el conteo actual de hilos en espera por transición.
-     *
-     * @return matriz 1xT con cantidad de hilos esperando por transición.
-     */
-    private DMatrixRMaj getWaitingCounts() {
-      return waitingCount;
+    private boolean hasWaiters(int transition) {
+      return waitingCount.get(0, transition) > 0;
+    }
+
+    private void signalOne(int transition) {
+      decrementWaitingCount(transition);
+      getSemaphoreForTransition(transition).release();
     }
 
     /**
