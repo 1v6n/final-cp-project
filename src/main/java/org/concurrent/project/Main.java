@@ -17,7 +17,11 @@ public class Main {
   /** Policy mode applied by the monitor. Change to compare behaviors. */
   private static final PolicyMode POLICY_MODE = PolicyMode.PRIORITIZED;
 
-  private record WorkerSpec(String name, List<Integer> path, boolean countsCompletion) {
+  private record WorkerSpec(
+      String name,
+      List<Integer> path,
+      boolean countsCompletion,
+      int instances) {
   }
 
   public static void main(String[] args) {
@@ -72,21 +76,32 @@ public class Main {
 
   private static Thread[] createWorkers(Monitor monitor, AtomicInteger completedInvariants, AtomicInteger startedInvariants, AtomicBoolean running) {
     List<WorkerSpec> workerSpecs = List.of(
-        new WorkerSpec("Thread-1", List.of(0, 1), false),
-        new WorkerSpec("Thread-2", List.of(2), false),
-        new WorkerSpec("Thread-3", List.of(3), false),
-        new WorkerSpec("Thread-4", List.of(5), false),
-        new WorkerSpec("Thread-5", List.of(4), false),
-        new WorkerSpec("Thread-6", List.of(6, 9, 10, 11), true),
-        new WorkerSpec("Thread-7", List.of(7, 8, 11), true));
+        new WorkerSpec("Thread-1", List.of(0, 1), false, 1),
+        new WorkerSpec("Thread-2", List.of(2), false, 1),
+        new WorkerSpec("Thread-3", List.of(3), false, 1),
+        new WorkerSpec("Thread-4", List.of(5), false, 1),
+        new WorkerSpec("Thread-5", List.of(4), false, 1),
+        new WorkerSpec("Thread-6", List.of(6, 9, 10, 11), true, 2),
+        new WorkerSpec("Thread-7", List.of(7, 8, 11), true, 2));
 
-    Thread[] workers = new Thread[workerSpecs.size()];
+    int totalWorkers = workerSpecs.stream().mapToInt(WorkerSpec::instances).sum();
+    Thread[] workers = new Thread[totalWorkers];
+    int workerIndex = 0;
 
-    for (int i = 0; i < workerSpecs.size(); i++) {
-      WorkerSpec spec = workerSpecs.get(i);
-      workers[i] = new Thread(
-          new Threads(spec.path(), monitor, completedInvariants, startedInvariants, TOTAL_RUNS, spec.countsCompletion(), running),
-          spec.name());
+    for (WorkerSpec spec : workerSpecs) {
+      for (int instance = 1; instance <= spec.instances(); instance++) {
+        String name = spec.instances() == 1 ? spec.name() : spec.name() + "-" + instance;
+        workers[workerIndex++] = new Thread(
+            new Threads(
+                spec.path(),
+                monitor,
+                completedInvariants,
+                startedInvariants,
+                TOTAL_RUNS,
+                spec.countsCompletion(),
+                running),
+            name);
+      }
     }
 
     return workers;
