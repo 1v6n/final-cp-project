@@ -13,7 +13,7 @@ import org.concurrent.project.Policy.PolicyMode;
  */
 public class Main {
   private static final int TOTAL_RUNS = 186;
-  private static final boolean timed = false;
+  private static final boolean timed = true;
   /** Policy mode applied by the monitor. Change to compare behaviors. */
   private static final PolicyMode POLICY_MODE = PolicyMode.PRIORITIZED;
 
@@ -75,14 +75,13 @@ public class Main {
   }
 
   private static Thread[] createWorkers(Monitor monitor, AtomicInteger completedInvariants, AtomicInteger startedInvariants, AtomicBoolean running) {
-    List<WorkerSpec> workerSpecs = List.of(
+      List<WorkerSpec> workerSpecs = List.of(
         new WorkerSpec("Thread-1", List.of(0, 1), false, 1),
-        new WorkerSpec("Thread-2", List.of(2), false, 1),
-        new WorkerSpec("Thread-3", List.of(3), false, 1),
-        new WorkerSpec("Thread-4", List.of(5), false, 1),
-        new WorkerSpec("Thread-5", List.of(4), false, 1),
-        new WorkerSpec("Thread-6", List.of(6, 9, 10, 11), true, 2),
-        new WorkerSpec("Thread-7", List.of(7, 8, 11), true, 2));
+        new WorkerSpec("Thread-2", List.of(2, 5), false, 1),
+        new WorkerSpec("Thread-3", List.of(3, 4), false, 1),
+        new WorkerSpec("Thread-4", List.of(6, 9, 10), false, 1),
+        new WorkerSpec("Thread-5", List.of(7, 8), false, 1),
+        new WorkerSpec("Thread-6", List.of(11), true, 1));
 
     int totalWorkers = workerSpecs.stream().mapToInt(WorkerSpec::instances).sum();
     Thread[] workers = new Thread[totalWorkers];
