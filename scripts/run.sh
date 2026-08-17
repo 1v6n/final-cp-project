@@ -26,7 +26,7 @@ else
   java_major="${raw_version}"
 fi
 
-required_major=20
+required_major=21
 if (( java_major < required_major )); then
   echo "Error: Java ${required_major}+ is required by pom.xml, but found Java ${raw_version}."
   echo "Set JAVA_HOME to a JDK ${required_major}+ and re-run this script."

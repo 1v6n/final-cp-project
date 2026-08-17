@@ -4,6 +4,11 @@ Este archivo registra el rediseño incremental aplicado sobre la arquitectura
 existente. Se preservan las clases de producción y los nombres públicos
 acordados; los cambios reorganizan solamente responsabilidades internas.
 
+> **Estado de la evidencia.** Las afirmaciones de tests de la sección de
+> verificación pertenecen a una rama/commit auxiliar y no están integradas en el
+> `HEAD` de esta rama. Para reproducir la configuración vigente seguir los
+> criterios del `README.md` (sección "Criterios de aceptación").
+
 ## En desarrollo — 2026-07-28
 
 ### Política de selección (`Policy`)
@@ -55,27 +60,35 @@ acordados; los cambios reorganizan solamente responsabilidades internas.
 ### Workers de reservas (`Main`)
 
 - `WorkerSpec` ahora incluye `instances`.
-- Se conserva una sola especificación por path y se generan nueve workers:
-  cinco workers base, dos para `[6,9,10,11]` y dos para `[7,8,11]`.
-- Las instancias duplicadas reciben nombres distinguibles (`Thread-6-1`,
-  `Thread-6-2`, etc.).
+- La configuración pragmática usa seis workers persistentes, una instancia por
+  responsabilidad: `[0,1]`, `[2,5]`, `[3,4]`, `[6,9,10]`, `[7,8]` y `[11]`.
+- El worker de `[11]` es la responsabilidad común posterior a la convergencia y
+  es el único que acredita las 186 finalizaciones.
+
+#### Caso histórico: configuraciones 2×2
+
+El commit `8ca4e86` configuró `2 × [T6,T9,T10,T11]` y `2 × [T7,T8,T11]`,
+totalizando nueve threads físicos. Esa duplicación no se deriva del paper y no se
+justificó con evidencia de rendimiento; además, duplicaba la responsabilidad
+común de `T11`. P10 serializa el tramo crítico, por lo que más workers generan
+más espera sin aumentar el paralelismo estructural. Quedó reemplazada por la
+configuración de seis workers.
 
 ### Verificación automatizada
 
-- Se incorporó JUnit Jupiter y Surefire en Maven.
-- Se agregó una suite de tests para política, tiempo, RdP, monitor, workers,
-  configuración, log e integración; su alcance está detallado en `TESTS.md`.
-- Los tests de política fijan la ecuación de Bresenham:
+- La suite de tests descrita a continuación pertenece a una rama/commit auxiliar;
+  no forma parte del `HEAD` actual porque Maven no declara JUnit ni Surefire.
+- Como referencia histórica, esos tests fijaban la ecuación de Bresenham:
 
   ```text
   n * p = 100 * S_n + A_n, con 0 <= A_n < 100
   ```
 
-- Los tests concurrentes verifican waiters reales, signal-and-exit,
-  interrupciones, ausencia de deferral artificial y la liberación del monitor
-  durante una espera temporal.
+- La evidencia reproducible vigente debe seguir los criterios del `README.md`
+  (sección "Criterios de aceptación") y no asumir que aquella suite está
+  disponible.
 
-### Validación de esta etapa
+### Validación histórica de la etapa
 
 - `mvn -o test`: 56 tests ejecutados, 56 verdes.
 - Simulación completa con `PolicyMode.PRIORITIZED`: 186 invariantes completadas
