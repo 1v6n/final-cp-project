@@ -15,13 +15,9 @@ import java.util.function.LongSupplier;
  */
 public class TimeRestrictions {
     /** Resultado de evaluación temporal para un intento de disparo. */
-    public enum FireEvaluation {
-        ALLOWED,
-        TOO_EARLY,
-        NOT_ENABLED
-    }
-
+    public enum FireEvaluation { ALLOWED, TOO_EARLY }
     public static final long INFINITE_BETA = Long.MAX_VALUE;
+
     private static class TimingConfig {
         private final long alphaNs;
         private final long betaNs;
@@ -49,28 +45,14 @@ public class TimeRestrictions {
     /**
      * Construye el gestor temporal usando {@link System#nanoTime()} como reloj.
      */
-    public TimeRestrictions(boolean timed, int[][] timedTransitionsConfig) {
-        this(System::nanoTime);
+    TimeRestrictions(int[][] timedTransitionsConfig) {
+        timedTransitions = new HashMap<>();
+        runtimeStates = new HashMap<>();
+        clockNs = System::nanoTime;
 
-        if (timed) {
-            for (int[] config : timedTransitionsConfig) {
-                setTimedTransition(config[0], config[1], INFINITE_BETA);
-            }
+        for (int[] config : timedTransitionsConfig) {
+            setTimedTransition(config[0], config[1], INFINITE_BETA);
         }
-    }
-
-    /**
-     * Construye el gestor temporal con un proveedor de tiempo inyectable.
-     * <p>
-     * Visible a paquete para facilitar pruebas determinísticas del
-     * comportamiento temporal.
-     *
-     * @param clockNs proveedor de tiempo en nanosegundos.
-     */
-    TimeRestrictions(LongSupplier clockNs) {
-        this.timedTransitions = new HashMap<>();
-        this.runtimeStates = new HashMap<>();
-        this.clockNs = clockNs;
     }
 
     /**
@@ -88,12 +70,13 @@ public class TimeRestrictions {
             throw new IllegalArgumentException("alphaMs debe ser >= 0");
         }
 
-        if (betaMs != INFINITE_BETA && betaMs < alphaMs) {
+        if (betaMs < alphaMs) {
             throw new IllegalArgumentException("betaMs debe ser >= alphaMs o infinito");
         }
 
         long alphaNs = TimeUnit.MILLISECONDS.toNanos(alphaMs);
         long betaNs = (betaMs == INFINITE_BETA) ? INFINITE_BETA : TimeUnit.MILLISECONDS.toNanos(betaMs);
+
         timedTransitions.put(transition, new TimingConfig(alphaNs, betaNs));
         runtimeStates.put(transition, new RuntimeState());
     }
@@ -147,32 +130,26 @@ public class TimeRestrictions {
     }
 
     /**
-     * Evalúa si una transición puede dispararse en el instante actual.
+     * Evalúa si una transición puede dispararse en el instante actual o no.
      *
      * @param transition número de transición.
-     * @return resultado de evaluación temporal para el disparo.
+     * @return {@code true} si la transición puede dispararse; {@code false} en caso
+     *         contrario.
      */
-    public FireEvaluation evaluateFire(int transition) {
+    public boolean canFire(int transition) throws InterruptedException {
         if (!isTimedTransition(transition)) {
-            return FireEvaluation.ALLOWED;
+            return true;
         }
 
         RuntimeState state = runtimeStates.get(transition);
         if (!state.sensitized) {
-            return FireEvaluation.NOT_ENABLED;
+            throw new IllegalStateException();
         }
 
         TimingConfig config = timedTransitions.get(transition);
         long elapsed = clockNs.getAsLong() - state.enabledAtNs;
-        if (elapsed < config.alphaNs) {
-            return FireEvaluation.TOO_EARLY;
-        }
 
-        if (config.betaNs != INFINITE_BETA && elapsed > config.betaNs) {
-            return FireEvaluation.NOT_ENABLED;
-        }
-
-        return FireEvaluation.ALLOWED;
+        return elapsed >= config.alphaNs;
     }
 
     /**
@@ -181,21 +158,25 @@ public class TimeRestrictions {
      * @param transition número de transición.
      * @return milisegundos restantes para EFT ({@code 0} si no aplica).
      */
-    public long getRemainingToEarliest(int transition) {
+    public long getRemainingToEFT(int transition) {
         if (!isTimedTransition(transition)) {
             return 0L;
         }
+
         RuntimeState state = runtimeStates.get(transition);
         if (!state.sensitized) {
             return 0L;
         }
+
         TimingConfig config = timedTransitions.get(transition);
         long elapsed = clockNs.getAsLong() - state.enabledAtNs;
-        long remainingNs = Math.max(config.alphaNs - elapsed, 0L);
+        long remainingNs = Math.max(0L, config.alphaNs - elapsed);
         long remainingMs = TimeUnit.NANOSECONDS.toMillis(remainingNs);
+
         if (remainingNs > 0 && remainingMs == 0L) {
             return 1L;
         }
+
         return remainingMs;
     }
 
@@ -206,9 +187,9 @@ public class TimeRestrictions {
      * @param transition transición en estado {@link FireEvaluation#TOO_EARLY}.
      * @throws InterruptedException si el hilo es interrumpido durante la espera.
      */
-    void awaitUntilEarliestFireTime(int transition) throws InterruptedException {
+    void awaitUntilEFT(int transition) throws InterruptedException {
         long remainingMs;
-        while ((remainingMs = getRemainingToEarliest(transition)) > 0) {
+        while ((remainingMs = getRemainingToEFT(transition)) > 0) {
             Thread.sleep(remainingMs);
         }
     }

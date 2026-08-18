@@ -35,19 +35,18 @@ public class Monitor implements MonitorInterface {
    * Inicializa semáforo de entrada, colas de espera y utilidades de tiempo.
    *
    * @param rdp     red de Petri controlada por el monitor.
-   * @param timed   indica si se habilitan restricciones temporales.
    * @param log     servicio de logging para eventos de disparo.
    * @param policy  política que elige a qué waiter despertar tras un disparo.
    *              En modo {@code PolicyMode.NONE} la elección es aleatoria;
    *              la política no veta disparos directos ya habilitados.
    */
-  Monitor(RdP rdp, boolean timed, LogService log, Policy policy) {
+  Monitor(RdP rdp, LogService log, Policy policy) {
     entry = new Semaphore(1, true);
     this.rdp = rdp;
     this.log = log;
     queues = new Queues(rdp.getIncidencia().numCols);
     this.policy = policy;
-    time = new TimeRestrictions(timed, TIMED_TRANSITIONS_BASE_MS);
+    time = new TimeRestrictions(TIMED_TRANSITIONS_BASE_MS);
   }
 
   /**
@@ -76,24 +75,18 @@ public class Monitor implements MonitorInterface {
         if (!ownership.isOwned()) {
           ownership.acquire();
         }
+
         if (!rdp.isSensitized(transition)) {
           waitForSensitization(transition, ownership);
           continue;
         }
 
-        switch (time.evaluateFire(transition)) {
-          case ALLOWED:
-            fireAndReleaseTransition(transition, ownership);
-            return true;
-
-          case TOO_EARLY:
-            waitUntilEarliestFireTime(transition, ownership);
-            continue;
-
-          case NOT_ENABLED:
-            throw new IllegalStateException(
-                "Estado inconsistente: transición sensibilizada en RdP pero "
-                    + "NOT_ENABLED en temporización. T" + transition);
+        if (time.canFire(transition)) {
+          fireAndReleaseTransition(transition, ownership);
+          return true;
+        } else {
+          ownership.release();
+          time.awaitUntilEFT(transition);
         }
       }
     } catch (InterruptedException e) {
@@ -205,19 +198,6 @@ public class Monitor implements MonitorInterface {
   }
 
   /**
-   * Espera hasta alcanzar ETF para una transición temporizada.
-   * <p>
-   * Libera el monitor antes de delegar la espera temporal.
-   *
-   * @param transition transición en estado {@code TOO_EARLY}.
-   * @throws InterruptedException si el hilo es interrumpido durante la espera.
-   */
-  private void waitUntilEarliestFireTime(int transition, Ownership ownership) throws InterruptedException {
-    ownership.release();
-    time.awaitUntilEarliestFireTime(transition);
-  }
-
-  /**
    * Bloquea el hilo hasta que la transición vuelva a sensibilizarse y sea
    * señalada.
    * <p>
@@ -237,6 +217,7 @@ public class Monitor implements MonitorInterface {
     queues.incrementWaitingCount(transition);
     ownership.release();
     boolean acquired = false;
+
     try {
       queues.getSemaphoreForTransition(transition).acquire();
       acquired = true;
