@@ -12,7 +12,6 @@ hide empty members
 package "Aplicación" {
   class Main {
     -{static} TOTAL_RUNS: int
-    -{static} timed: boolean
     -{static} POLICY_MODE: PolicyMode
     +{static} main(args: String[]): void
     -{static} createWorkers(...): Thread[]
@@ -27,7 +26,6 @@ package "Aplicación" {
     -name: String
     -path: List<Integer>
     -countsCompletion: boolean
-    -instances: int
   }
 
   class Threads <<Runnable>> {
@@ -68,13 +66,11 @@ package "Monitor concurrente" {
     -time: TimeRestrictions
     -log: LogService
     -pInvariants: List<PInvariant>
-    ~Monitor(rdp: RdP, timed: boolean, log: LogService, policy: Policy)
+    ~Monitor(rdp: RdP, log: LogService, policy: Policy)
     +fireTransition(transition: int): boolean
     -fireAndReleaseTransition(transition: int, ownership: Ownership): void
     -selectWaiterOrRelease(ownership: Ownership): void
     -wakingCandidates(): List<Integer>
-    -signalOneWaiter(transition: int): void
-    -waitUntilEarliestFireTime(transition: int, ownership: Ownership): void
     -waitForSensitization(transition: int, ownership: Ownership): void
     -logFireResult(transition: int): void
     -validateTransitionIndex(transition: int): void
@@ -126,21 +122,20 @@ package "Red de Petri y tiempo" {
     -timedTransitions: Map<Integer, TimingConfig>
     -runtimeStates: Map<Integer, RuntimeState>
     -clockNs: LongSupplier
-    +TimeRestrictions(timed: boolean, timedTransitionsConfig: int[][])
+    ~TimeRestrictions(timedTransitionsConfig: int[][])
     +setTimedTransition(transition: int, alphaMs: long, betaMs: long): void
     +isTimedTransition(transition: int): boolean
     +updateSensitizationState(transition: int, isSensitized: boolean): void
     +updateFromSensitized(sensitized: DMatrixRMaj): void
-    +evaluateFire(transition: int): FireEvaluation
-    +getRemainingToEarliest(transition: int): long
-    ~awaitUntilEarliestFireTime(transition: int): void
+    +canFire(transition: int): boolean
+    +getRemainingToEFT(transition: int): long
+    ~awaitUntilEFT(transition: int): void
     +onTransitionFired(transition: int, isStillSensitized: boolean): void
   }
 
   enum FireEvaluation {
     ALLOWED
     TOO_EARLY
-    NOT_ENABLED
   }
 
   class TimingConfig {
@@ -233,7 +228,6 @@ Monitor --> LogService
 Monitor --> PInvariant
 Monitor ..> Invariants
 
-TimeRestrictions --> FireEvaluation
 TimeRestrictions *-- TimingConfig
 TimeRestrictions *-- RuntimeState
 Policy --> PolicyMode
@@ -243,12 +237,7 @@ Invariants +-- PInvariantResult
 
 note right of WorkerSpec
   Se conserva el record existente.
-  Sólo se agrega instances para no duplicar
-  especificaciones en Main.
-
-  Instancias finales:
-  2 × [6,9,10,11]
-  2 × [7,8,11]
+  La configuración final usa una responsabilidad por worker.
 end note
 
 note right of Policy
@@ -298,8 +287,9 @@ note bottom of Monitor
   handleSensitizedTransition() y
   shouldDeferToPolicySelectedReservation().
 
-  fireTransition() muestra directamente el switch temporal
-  y desde ALLOWED llama a fireAndReleaseTransition().
+  fireTransition() usa un if/else sobre canFire():
+  verdadero dispara, falso libera ownership y
+  delega la espera temporal a awaitUntilEFT().
 
   wakingCandidates() consulta RdP.isSensitized(t)
   y Queues.hasWaiters(t), sin exponer matrices
@@ -307,9 +297,11 @@ note bottom of Monitor
 end note
 
 note bottom of TimeRestrictions
-  El Monitor conserva waitUntilEarliestFireTime()
-  como parte del protocolo de ownership, pero delega
-  el cálculo y Thread.sleep a TimeRestrictions.
+  El Monitor delega la espera temporal en
+  awaitUntilEFT(), que duerme en intervalos de
+  getRemainingToEFT() ms hasta alcanzar la EFT.
+  canFire() devuelve boolean y lanza
+  IllegalStateException si la LFT expiró.
 end note
 
 @enduml
