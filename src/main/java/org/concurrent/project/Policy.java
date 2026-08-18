@@ -199,20 +199,15 @@ public class Policy {
   }
 
   /**
-   * Imprime un resumen detallado de los resultados de la ejecución, incluyendo
-   * el total de disparos, la cantidad de disparos en conflicto, la distribución
-   * de disparos entre las transiciones superiores e inferiores, y los
-   * porcentajes correspondientes tanto para los casos en conflicto como para el
-   * total global. También muestra el total real de disparos registrados para
-   * agentes y reservas.
+   * Imprime un resumen de la ejecución: disparos totales por transición,
+   * cantidad de conflictos detectados y resolución de Bresenham cuando
+   * la política intervino.
    */
   public void printSummary() {
     int totalAgents = agentInferiorCount + agentSuperiorCount;
     int totalConflictAgents = conflictAgentInferior + conflictAgentSuperior;
-    int forcedAgents = totalAgents - totalConflictAgents;
     int totalReservations = confirmedReservations + cancelledReservations;
     int totalConflictReservations = conflictConfirmed + conflictCancelled;
-    int forcedReservations = totalReservations - totalConflictReservations;
     StringBuilder summary = new StringBuilder();
 
     summary.append(System.lineSeparator())
@@ -222,96 +217,96 @@ public class Policy {
         .append("Policy mode: ")
         .append(mode)
         .append(System.lineSeparator())
-        .append(System.lineSeparator())
-        .append("--- AGENTES (T2 vs T3) ---")
-        .append(System.lineSeparator())
-        .append("Total disparos: ")
-        .append(totalAgents)
-        .append(System.lineSeparator())
-        .append("  En conflicto: ")
-        .append(totalConflictAgents)
-        .append(System.lineSeparator())
-        .append("    T2 (superior): ")
-        .append(conflictAgentSuperior)
-        .append(System.lineSeparator())
-        .append("    T3 (inferior): ")
-        .append(conflictAgentInferior)
         .append(System.lineSeparator());
 
-    if (totalConflictAgents > 0) {
-      summary.append(
-          String.format("    %% Superior (conflicto): %.2f%%%n",
-              100.0 * conflictAgentSuperior / totalConflictAgents));
-    }
-
-    summary.append("  Sin conflicto: ")
-        .append(forcedAgents)
-        .append(System.lineSeparator())
-        .append("  TOTAL GLOBAL:")
-        .append(System.lineSeparator())
-        .append("    T2: ")
-        .append(agentSuperiorCount)
-        .append(System.lineSeparator())
-        .append("    T3: ")
-        .append(agentInferiorCount)
-        .append(System.lineSeparator());
-
-    if (totalAgents > 0) {
-      summary.append(String.format("    %% Superior (global): %.2f%%%n",
-          100.0 * agentSuperiorCount / totalAgents));
-    }
-
-    summary.append(System.lineSeparator())
-        .append("--- RESERVAS (T6 vs T7) ---")
-        .append(System.lineSeparator())
-        .append("Total disparos: ")
-        .append(totalReservations)
-        .append(System.lineSeparator())
-        .append("  En conflicto: ")
-        .append(totalConflictReservations)
-        .append(System.lineSeparator())
-        .append("    T6 (confirmadas): ")
-        .append(conflictConfirmed)
-        .append(System.lineSeparator())
-        .append("    T7 (canceladas): ")
-        .append(conflictCancelled)
-        .append(System.lineSeparator());
-
-    if (totalConflictReservations > 0) {
-      summary.append(
-          String.format("    %% Confirmadas (conflicto): %.2f%%%n",
-              100.0 * conflictConfirmed / totalConflictReservations));
-    }
-
-    summary.append("  Sin conflicto: ")
-        .append(forcedReservations)
-        .append(System.lineSeparator())
-        .append("  TOTAL GLOBAL:")
-        .append(System.lineSeparator())
-        .append("    T6: ")
-        .append(confirmedReservations)
-        .append(System.lineSeparator())
-        .append("    T7: ")
-        .append(cancelledReservations)
-        .append(System.lineSeparator());
-
-    if (totalReservations > 0) {
-      summary.append(
-          String.format("    %% Confirmadas (global): %.2f%%%n",
-              100.0 * confirmedReservations / totalReservations));
-    }
+    appendAgentSummary(summary, totalAgents, totalConflictAgents);
+    appendReservationSummary(summary, totalReservations, totalConflictReservations);
 
     summary.append(System.lineSeparator())
         .append("================================================")
-        .append(System.lineSeparator())
-        .append(System.lineSeparator())
-        .append("Agents real total: ")
-        .append(agentInferiorCount + agentSuperiorCount)
-        .append(System.lineSeparator())
-        .append("Reservations real total: ")
-        .append(confirmedReservations + cancelledReservations)
         .append(System.lineSeparator());
 
     System.out.print(summary);
+  }
+
+  private void appendAgentSummary(StringBuilder summary, int total, int conflictTotal) {
+    summary.append("--- AGENTES (T2 vs T3) ---")
+        .append(System.lineSeparator())
+        .append("Disparos totales: ")
+        .append(total)
+        .append(System.lineSeparator())
+        .append("  T2 (superior): ")
+        .append(agentSuperiorCount)
+        .append(pct(agentSuperiorCount, total))
+        .append(System.lineSeparator())
+        .append("  T3 (inferior): ")
+        .append(agentInferiorCount)
+        .append(pct(agentInferiorCount, total))
+        .append(System.lineSeparator())
+        .append(System.lineSeparator())
+        .append("Conflictos: ")
+        .append(conflictTotal)
+        .append(pct(conflictTotal, total))
+        .append(System.lineSeparator());
+
+    if (conflictTotal > 0) {
+      summary.append("  Resolución Bresenham (objetivo: ")
+          .append(AGENT_PREFERRED_PERCENT)
+          .append("%):")
+          .append(System.lineSeparator())
+          .append("    T2 elegida: ")
+          .append(conflictAgentSuperior)
+          .append(pct(conflictAgentSuperior, conflictTotal))
+          .append(System.lineSeparator())
+          .append("    T3 elegida: ")
+          .append(conflictAgentInferior)
+          .append(pct(conflictAgentInferior, conflictTotal))
+          .append(System.lineSeparator());
+    }
+
+    summary.append(System.lineSeparator());
+  }
+
+  private void appendReservationSummary(StringBuilder summary, int total, int conflictTotal) {
+    summary.append("--- RESERVAS (T6 vs T7) ---")
+        .append(System.lineSeparator())
+        .append("Disparos totales: ")
+        .append(total)
+        .append(System.lineSeparator())
+        .append("  T6 (confirmadas): ")
+        .append(confirmedReservations)
+        .append(pct(confirmedReservations, total))
+        .append(System.lineSeparator())
+        .append("  T7 (canceladas): ")
+        .append(cancelledReservations)
+        .append(pct(cancelledReservations, total))
+        .append(System.lineSeparator())
+        .append(System.lineSeparator())
+        .append("Conflictos: ")
+        .append(conflictTotal)
+        .append(pct(conflictTotal, total))
+        .append(System.lineSeparator());
+
+    if (conflictTotal > 0) {
+      summary.append("  Resolución Bresenham (objetivo: ")
+          .append(RESERVATION_PREFERRED_PERCENT)
+          .append("%):")
+          .append(System.lineSeparator())
+          .append("    T6 elegida: ")
+          .append(conflictConfirmed)
+          .append(pct(conflictConfirmed, conflictTotal))
+          .append(System.lineSeparator())
+          .append("    T7 elegida: ")
+          .append(conflictCancelled)
+          .append(pct(conflictCancelled, conflictTotal))
+          .append(System.lineSeparator());
+    }
+  }
+
+  private String pct(int part, int total) {
+    if (total == 0) {
+      return "";
+    }
+    return String.format(" (%.1f%%)", 100.0 * part / total);
   }
 }
