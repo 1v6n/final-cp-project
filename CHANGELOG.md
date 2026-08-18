@@ -59,9 +59,8 @@ acordados; los cambios reorganizan solamente responsabilidades internas.
 
 ### Workers de reservas (`Main`)
 
-- `WorkerSpec` ahora incluye `instances`.
-- La configuración pragmática usa seis workers persistentes, una instancia por
-  responsabilidad: `[0,1]`, `[2,5]`, `[3,4]`, `[6,9,10]`, `[7,8]` y `[11]`.
+- La configuración pragmática usa seis workers persistentes, una responsabilidad
+  por worker: `[0,1]`, `[2,5]`, `[3,4]`, `[6,9,10]`, `[7,8]` y `[11]`.
 - El worker de `[11]` es la responsabilidad común posterior a la convergencia y
   es el único que acredita las 186 finalizaciones.
 
@@ -96,3 +95,38 @@ configuración de seis workers.
 - `scripts/run-regex.sh`: 186 T-invariantes detectadas de 186 esperadas.
   Distribución observada: 97 superior-confirmada, 42 superior-cancelada,
   34 inferior-confirmada y 13 inferior-cancelada.
+
+## Cambios - 18/08/2026
+
+### Simplificación de `WorkerSpec` y creación de workers (`Main`)
+
+- Se eliminó el campo `instances` de `WorkerSpec`. Cada especificación
+  representa exactamente un hilo, por lo que el loop de creación se redujo
+  a iterar directamente sobre la lista sin anidar.
+- Se eliminó `timed` como constante y parámetro de `Monitor` y
+  `TimeRestrictions`: las transiciones temporizadas ahora se configuran
+  siempre.
+
+### Simplificación de restricciones temporales (`TimeRestrictions`)
+
+- Se eliminó el valor `NOT_ENABLED` del enum `FireEvaluation` (quedan solo
+  `ALLOWED` y `TOO_EARLY`).
+- `evaluateFire()` fue reemplazado por `canFire()`: devuelve `boolean`
+  (`true` → permitido, `false` → demasiado temprano) y lanza
+  `IllegalStateException` si la ventana LFT expiró.
+- Se renombró `getRemainingToEarliest` → `getRemainingToEFT` y
+  `awaitUntilEarliestFireTime` → `awaitUntilEFT`.
+
+### Simplificación del monitor (`Monitor`)
+
+- `fireTransition()` reemplazó el `switch` sobre `evaluateFire()` por un
+  `if (time.canFire(transition))`: rama verdadera dispara, rama falsa
+  libera ownership y delega la espera temporal a `awaitUntilEFT`.
+- Se eliminó el método privado `waitUntilEarliestFireTime()`; su lógica
+  quedó inline en la rama `else` de `fireTransition()`.
+
+### Diagramas y documentación
+
+- Se actualizó `RedesignClassDiagram.puml` para reflejar la eliminación
+  de `instances` en `WorkerSpec` y la aclaración de que la configuración
+  final usa una responsabilidad por worker.

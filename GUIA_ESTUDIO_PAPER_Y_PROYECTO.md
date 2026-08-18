@@ -917,7 +917,7 @@ implícita entre un objeto Java y un cliente concreto.
 ### 10.1 Workers configurados
 
 **[PROYECTO]** `Main.java:77-105` configura seis `WorkerSpec`, todos con
-`instances=1`:
+`countsCompletion=false` excepto el último. La tabla de responsabilidades es:
 
 | Worker     | Path configurado | Segmento lógico |
 | ---------- | ---------------- | --------------- |
