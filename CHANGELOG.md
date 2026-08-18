@@ -130,3 +130,14 @@ configuración de seis workers.
 - Se actualizó `RedesignClassDiagram.puml` para reflejar la eliminación
   de `instances` en `WorkerSpec` y la aclaración de que la configuración
   final usa una responsabilidad por worker.
+
+### Resultados de Salida (`Policy.printSummary`)
+
+- Se reestructuró el resumen en dos bloques independientes: disparos
+  totales por transición y resolución de conflictos por Bresenham.
+- Se eliminó la categoría derivada "sin conflicto" y la sección
+  redundante de totales al final.
+- Se agregó el porcentaje del total junto al conteo de conflictos y
+  el porcentaje objetivo de Bresenham (75 % / 80 %) en la resolución.
+- Se extrajeron helpers `appendAgentSummary`, `appendReservationSummary`
+  y `pct` para mejorar la legibilidad del método.
