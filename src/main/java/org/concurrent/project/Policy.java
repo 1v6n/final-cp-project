@@ -111,6 +111,18 @@ public class Policy {
   }
 
   /**
+   * Elige cualquier transición candidata a set disparada usando un generador
+   * de número aleatorio.
+   *
+   * @param candidates Lista de candidatos a elegir
+   * @return número de transición a disparar
+   */
+  private int selectAny(List<Integer> candidates) {
+    return candidates.get(
+        ThreadLocalRandom.current().nextInt(candidates.size()));
+  }
+
+  /**
    * Aplica Bresenham al residuo independiente del grupo de conflicto.
    *
    * @param group grupo con ambas ramas como candidatos efectivos.
@@ -181,18 +193,6 @@ public class Policy {
       default -> {
       }
     }
-  }
-
-  /**
-   * Elige cualquier transición candidata a set disparada usando un generador
-   * de número aleatorio.
-   *
-   * @param candidates Lista de candidatos a elegir
-   * @return número de transición a disparar
-   */
-  public int selectAny(List<Integer> candidates) {
-    return candidates.get(
-        ThreadLocalRandom.current().nextInt(candidates.size()));
   }
 
   /**
