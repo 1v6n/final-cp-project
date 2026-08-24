@@ -33,8 +33,19 @@ if (( java_major < required_major )); then
   exit 1
 fi
 
+# Java 24+ warns about the internal API used by Maven's dependency injector.
+# Allowing it here removes that unrelated warning without changing the project.
+if (( java_major >= 24 )); then
+  if [[ -n "${MAVEN_OPTS:-}" ]]; then
+    MAVEN_OPTS+=" "
+  fi
+  MAVEN_OPTS+="--sun-misc-unsafe-memory-access=allow"
+  export MAVEN_OPTS
+fi
+
 cd "${REPO_ROOT}"
 
-mvn clean compile
-
-mvn -e exec:java -Dexec.mainClass=org.concurrent.project.Main
+# El modo quiet de Maven oculta su salida normal, pero conserva la barra de
+# progreso, el resumen de la aplicación y cualquier error.
+mvn -q -B clean compile
+mvn -q -B exec:java -Dexec.mainClass=org.concurrent.project.Main

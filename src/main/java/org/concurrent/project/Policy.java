@@ -16,6 +16,7 @@ public class Policy {
     AGENTS, RESERVATIONS, NONE
   }
 
+  private static final int BALANCED_PREFERRED_PERCENTAGE = 50;
   private static final int AGENT_PREFERRED_PERCENTAGE = 75;
   private static final int RESERVATION_PREFERRED_PERCENTAGE = 80;
 
@@ -157,11 +158,7 @@ public class Policy {
    * @return el residuo acumulado después de sumar el porcentaje preferido
    */
   private int getAccumulatedResidue(ConflictGroup group) {
-    int preferredPercent = switch (group) {
-      case AGENTS -> AGENT_PREFERRED_PERCENTAGE;
-      case RESERVATIONS -> RESERVATION_PREFERRED_PERCENTAGE;
-      case NONE -> throw new IllegalArgumentException("No hay conflicto para seleccionar");
-    };
+    int preferredPercent = preferredPercentage(group);
 
     int residue = switch (group) {
       case AGENTS -> agentResidue;
@@ -171,6 +168,18 @@ public class Policy {
     };
 
     return residue + preferredPercent;
+  }
+
+  private int preferredPercentage(ConflictGroup group) {
+    return switch (mode) {
+      case BALANCED -> BALANCED_PREFERRED_PERCENTAGE;
+      case PRIORITIZED -> switch (group) {
+        case AGENTS -> AGENT_PREFERRED_PERCENTAGE;
+        case RESERVATIONS -> RESERVATION_PREFERRED_PERCENTAGE;
+        case NONE -> throw new IllegalArgumentException("No hay conflicto para seleccionar");
+      };
+      case NONE -> throw new IllegalArgumentException("La política NONE no usa porcentajes");
+    };
   }
 
   private void recordConflictDecision(int selected) {
@@ -248,7 +257,7 @@ public class Policy {
 
     if (conflictTotal > 0) {
       summary.append("  Resolución Bresenham (objetivo: ")
-          .append(AGENT_PREFERRED_PERCENTAGE)
+          .append(preferredPercentage(ConflictGroup.AGENTS))
           .append("%):")
           .append(System.lineSeparator())
           .append("    T2 elegida: ")
@@ -286,7 +295,7 @@ public class Policy {
 
     if (conflictTotal > 0) {
       summary.append("  Resolución Bresenham (objetivo: ")
-          .append(RESERVATION_PREFERRED_PERCENTAGE)
+          .append(preferredPercentage(ConflictGroup.RESERVATIONS))
           .append("%):")
           .append(System.lineSeparator())
           .append("    T6 elegida: ")
