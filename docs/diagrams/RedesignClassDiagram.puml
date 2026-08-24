@@ -10,181 +10,204 @@ skinparam ranksep 38
 hide empty members
 
 package "Aplicación" {
-  class Main {
-    -{static} TOTAL_RUNS: int
-    -{static} POLICY_MODE: PolicyMode
-    +{static} main(args: String[]): void
-    -{static} createWorkers(...): Thread[]
-    -{static} startThreads(workers: Thread[]): void
-    -{static} awaitCompletion(running: AtomicBoolean, completed: AtomicInteger): void
-    -{static} stopThreads(running: AtomicBoolean, workers: Thread[]): void
-    -{static} joinThreads(workers: Thread[]): void
-    -{static} printSummary(startTime: long, completed: AtomicInteger, policy: Policy): void
-  }
-
-  class "Main::WorkerSpec" as WorkerSpec <<record>> {
-    -name: String
-    -path: List<Integer>
-    -countsCompletion: boolean
-  }
-
-  class Threads <<Runnable>> {
-    -path: List<Integer>
-    -totalInvariants: int
-    -monitor: MonitorInterface
-    -completedInvariants: AtomicInteger
-    -startedInvariants: AtomicInteger
-    -countsCompletion: boolean
-    -running: AtomicBoolean
-    +Threads(path: List<Integer>, monitor: MonitorInterface, ...)
+  interface Runnable <<interface>> {
     +run(): void
   }
 
-  class ProgressBar <<AutoCloseable>> {
-    -total: int
-    -completed: AtomicInteger
-    -barWidth: int
-    -out: PrintStream
-    +ProgressBar(total: int, completed: AtomicInteger, barWidth: int)
-    +update(): void
-    -render(current: int, percent: int): void
+  interface AutoCloseable <<interface>> {
     +close(): void
+  }
+
+  class Main {
+    -{static} TOTAL_RUNS : int
+    -{static} POLICY_MODE : PolicyMode
+
+    +{static} main(args: String[]) : void
+    -{static} createWorkers(monitor : Monitor, ...) : Thread[]
+    -{static} startThreads(workers: Thread[]) : void
+    -{static} awaitCompletion(running: AtomicBoolean, completed: AtomicInteger) : void
+    -{static} stopThreads(running: AtomicBoolean, workers: Thread[]) : void
+    -{static} joinThreads(workers: Thread[]) : void
+    -{static} printSummary(startTime: long, completed: AtomicInteger, policy: Policy) : void
+  }
+
+  record "Main::WorkerSpec" as WorkerSpec {
+    -name : String
+    -path : List<Integer>
+    -countsCompletion : boolean
+  }
+
+  class Threads implements Runnable {
+    -path : List<Integer>
+    -totalInvariants : int
+    -monitor : MonitorInterface
+    -completedInvariants : AtomicInteger
+    -startedInvariants : AtomicInteger
+    -countsCompletion : boolean
+    -running : AtomicBoolean
+
+    +Threads(path: List<Integer>, monitor: MonitorInterface, ...)
+    +run() : void
+  }
+
+  class ProgressBar implements AutoCloseable {
+    -total : int
+    -completed : AtomicInteger
+    -barWidth : int
+    -out : PrintStream
+    -lastPercent : int
+    -completed_printed : boolean
+
+    +ProgressBar(total : int, completed : AtomicInteger, barWidth : int)
+    +synchronized update() : void
+    -render(current : int, percent : int) : void
+    +close() : void
   }
 }
 
-package "Monitor concurrente" {
+package "Monitor Concurrente" {
   interface MonitorInterface {
-    +fireTransition(transition: int): boolean
+    +fireTransition(transition : int) : boolean
   }
 
-  class Monitor {
-    -{static} TIMED_TRANSITIONS_BASE_MS: int[][]
-    -entry: Semaphore
-    -queues: Queues
-    -rdp: RdP
-    -policy: Policy
-    -time: TimeRestrictions
-    -log: LogService
-    -pInvariants: List<PInvariant>
-    ~Monitor(rdp: RdP, log: LogService, policy: Policy)
-    +fireTransition(transition: int): boolean
-    -fireAndReleaseTransition(transition: int, ownership: Ownership): void
-    -selectWaiterOrRelease(ownership: Ownership): void
+  class Monitor implements MonitorInterface {
+    -{static} TIMED_TRANSITIONS_BASE_MS : int[][]
+    -entry : Semaphore
+    -queues : Queues
+    -rdp : RdP
+    -policy : Policy
+    -time : TimeRestrictions
+    -log : LogService
+    -pInvariants : List<Invariants.PInvariant>
+
+    ~Monitor(rdp : RdP, log : LogService, policy : Policy)
+    +fireTransition(transition : int) : boolean
+    -waitForSensitization(transition : int, ownership : Ownership): void
+    -fireAndReleaseTransition(transition : int, ownership : Ownership): void
+    -selectWaiterOrRelease(ownership : Ownership): void
     -wakingCandidates(): List<Integer>
-    -waitForSensitization(transition: int, ownership: Ownership): void
-    -logFireResult(transition: int): void
-    -validateTransitionIndex(transition: int): void
-    -createFiringVector(transition: int): DMatrixRMaj
-    -snapshotMarking(): int[]
-    -catchMonitor(): void
-    -releaseMonitor(): void
+    -validateTransitionIndex(transition : int) : void
+    -createFiringVector(transition : int) : DMatrixRMaj
+    -catchMonitor() : void
+    -releaseMonitor() : void
+    -logFireResult(transition : int) : void
+    -snapshotMarking() : int[]
   }
 
   class "Monitor::Ownership" as Ownership {
-    -owned: boolean
-    +acquire(): void
-    +release(): void
-    +handoff(): void
-    +wakeFromQueue(): void
-    +isOwned(): boolean
+    -owned : boolean
+
+    +acquire() : void
+    +release() : void
+    +handoff() : void
+    +wakeFromQueue() : void
+    +isOwned() : boolean
   }
 
   class "Monitor::Queues" as Queues {
-    -queuesList: List<Semaphore>
-    -numQueues: int
-    -waitingCount: DMatrixRMaj
-    ~Queues(numQueues: int)
-    -incrementWaitingCount(transition: int): void
-    -decrementWaitingCount(transition: int): void
-    -hasWaiters(transition: int): boolean
-    -signalOne(transition: int): void
-    -getSemaphoreForTransition(transition: int): Semaphore
+    -queuesList : List<Semaphore>
+    -numQueues : int
+    -waitingCount : DMatrixRMaj
+    
+    ~Queues(numQueues : int)
+    -initializeSemaphores() : void
+    -createSemaphore() : Semaphore
+    -incrementWaitingCount(transition : int) : void
+    -decrementWaitingCount(transition : int) : void
+    -hasWaiters(transition : int) : boolean
+    -signalOne(transition : int): void
+    -getSemaphoreForTransition(transition : int): Semaphore
   }
 }
 
-package "Red de Petri y tiempo" {
+package "Red de Petri y Tiempo" {
   class RdP {
-    -Incidencia: DMatrixRMaj
-    -IncidenciaEntradaTraspuesta: DMatrixRMaj
-    -MarcadoActual: DMatrixRMaj
-    -Sensibilizadas: DMatrixRMaj
+    -Incidencia : DMatrixRMaj
+    -IncidenciaEntradaTraspuesta : DMatrixRMaj
+    -MarcadoActual : DMatrixRMaj
+    -Sensibilizadas : DMatrixRMaj
+    -M0 : double[]
+    -MatrixIncidencia : double[][]
+    -MatrixIncidenciaEntradaTraspuesta : double[][]
+
     +RdP()
-    +fireTransition(firingVector: DMatrixRMaj): void
-    +isSensitized(transition: int): boolean
-    +getMarcadoActual(): DMatrixRMaj
-    +getIncidencia(): DMatrixRMaj
-    +getSensitized(): DMatrixRMaj
-    -transicionesSensibilizadas(): void
+    +fireTransition(firingVector : DMatrixRMaj) : void
+    +isSensitized(transition : int) : boolean
+    -transicionesSensibilizadas() : void
+    +getMarcadoActual() : DMatrixRMaj
+    +getIncidencia() : DMatrixRMaj
+    +getSensitized() : DMatrixRMaj
   }
 
   class TimeRestrictions {
-    +{static} INFINITE_BETA: long
-    -timedTransitions: Map<Integer, TimingConfig>
-    -runtimeStates: Map<Integer, RuntimeState>
-    -clockNs: LongSupplier
-    ~TimeRestrictions(timedTransitionsConfig: int[][])
-    +setTimedTransition(transition: int, alphaMs: long, betaMs: long): void
-    +isTimedTransition(transition: int): boolean
-    +updateSensitizationState(transition: int, isSensitized: boolean): void
-    +updateFromSensitized(sensitized: DMatrixRMaj): void
-    +canFire(transition: int): boolean
-    +getRemainingToEFT(transition: int): long
-    ~awaitUntilEFT(transition: int): void
-    +onTransitionFired(transition: int, isStillSensitized: boolean): void
+    +{static} INFINITE_BETA : long
+    -timedTransitions : Map<Integer, TimingConfig>
+    -runtimeStates : Map<Integer, RuntimeState>
+    -clockNs : LongSupplier
+
+    ~TimeRestrictions(timedTransitionsConfig : int[][])
+    +setTimedTransition(transition : int, alphaMs : long, betaMs : long) : void
+    +isTimedTransition(transition : int) : boolean
+    +updateSensitizationState(transition : int, isSensitized : boolean) : void
+    +refreshTimedState(sensitized : DMatrixRMaj, firedTransition : int) : void
+    +canFire(transition : int) : boolean
+    +getRemainingToEFT(transition : int) : long
+    ~awaitUntilEFT(transition : int) : void
   }
 
-  enum FireEvaluation {
-    ALLOWED
-    TOO_EARLY
+  class "TimeRestrictions::TimingConfig" as TimingConfig {
+    -alphaNs : long
+    -betaNs : long
   }
 
-  class TimingConfig {
-    -alphaNs: long
-    -betaNs: long
-  }
+  class "TimeRestrictions::RuntimeState" as RuntimeState {
+    -sensitized : boolean
+    -enabledAtNs : long
 
-  class RuntimeState {
-    -sensitized: boolean
-    -enabledAtNs: long
+    -RuntimeState()
   }
 }
 
 package "Política" {
   class Policy {
-    -{static} AGENT_PREFERRED: int = 2
-    -{static} AGENT_PREFERRED_PERCENT: int = 75
-    -{static} RESERVATION_PREFERRED: int = 6
-    -{static} RESERVATION_PREFERRED_PERCENT: int = 80
-    -mode: PolicyMode
-    -agentResidue: int
-    -reservationResidue: int
-    -agentInferiorCount: int
-    -agentSuperiorCount: int
-    -confirmedReservations: int
-    -cancelledReservations: int
-    -conflictAgentSuperior: int
-    -conflictAgentInferior: int
-    -conflictConfirmed: int
-    -conflictCancelled: int
-    +Policy(mode: PolicyMode)
-    +isEnabled(): boolean
-    +choose(candidates: List<Integer>): int
-    +selectAny(candidates: List<Integer>): int
-    +onTransitionFired(transition: int): void
-    +printSummary(): void
-    -activeConflictIn(candidates: List<Integer>): ConflictGroup
-    -selectByPercentage(group: ConflictGroup, preferredPercent: int): int
-    -recordConflictDecision(selected: int): void
-    -recordRealFire(transition: int): void
+    -{static} BALANCED_PREFERRED_PERCENTAGE : int = 50
+    -{static} AGENT_PREFERRED_PERCENTAGE : int = 75
+    -{static} RESERVATION_PREFERRED_PERCENTAGE : int = 80
+    -mode : PolicyMode
+    -agentResidue : int
+    -reservationResidue : int
+    -agentInferiorCount : int
+    -agentSuperiorCount : int
+    -confirmedReservations : int
+    -cancelledReservations : int
+    -conflictAgentSuperior : int
+    -conflictAgentInferior : int
+    -conflictConfirmed : int
+    -conflictCancelled : int
+
+    +Policy(mode : PolicyMode)
+    +recordFire(transition : int) : void
+    -activeConflictIn(candidates : List<Integer>) : ConflictGroup
+    +choose(candidates : List<Integer>) : int
+    -selectAny(candidates : List<Integer>) : int
+    -selectByPercentage(group : ConflictGroup) : int
+    -getAccumulatedResidue(group : ConflictGroup) : int
+    -preferredPercentage(ConflictGroup group) : int
+    -recordConflictDecision(selected : int) : void
+    -recordRealFire(transition: int) : void
+    +printSummary() : void
+    -appendAgentSummary(summary : StringBuilder, total : int, conflictsTotal : int) : void
+    -appendReservationSummary(summary : StringBuilder, total : int, conflictsTotal : int) : void
+    -pct(part : int, total : int) : String
   }
 
-  enum PolicyMode {
+  enum "Policy::PolicyMode" as PolicyMode {
     NONE
     BALANCED
     PRIORITIZED
   }
 
-  enum ConflictGroup {
+  enum "Policy::ConflictGroup" as ConflictGroup {
     AGENTS
     RESERVATIONS
     NONE
@@ -192,23 +215,39 @@ package "Política" {
 }
 
 package "Observabilidad" {
-  class Invariants <<utility>> {
-    +{static} defaultPInvariants(): List<PInvariant>
-    +{static} checkPInvariants(marking: DMatrixRMaj, invariants: List<PInvariant>): List<PInvariantResult>
+  interface AutoCloseable <<interface>> {
+    +close() : void
+  }
+  
+  class Invariants {
+    +{static} defaultPInvariants() : List<PInvariant>
+    +{static} checkPInvariants(marking : DMatrixRMaj, invariants : List<PInvariant>) : List<PInvariantResult>
+
+    -Invariants()
   }
 
-  class PInvariant
-  class PInvariantResult <<record>>
+  class "Invariants::PInvariant" as PInvariant {
+    -name : String
+    -places : int[]
+    -expected : int
 
-  class LogService <<AutoCloseable>> {
-    +LogService(logPath: Path)
-    +logFire(threadName: String, transition: int, ok: boolean, marking: int[], pinv: String): void
-    +logEvent(threadName: String, event: String): void
-    +close(): void
+    +PInvariant(name : String, places : int[], expected : int)
+  }
+  record "Invariants::PInvariantResult" as PInvariantResult
+
+  class LogService implements AutoCloseable {
+    -writer : BufferedWriter
+    -tsFmt : DateTimeFormatter
+
+    +LogService(logPath : Path)
+    +synchronized logFire(threadName : String, transition : int, ok : boolean, marking : int[], pinv : String) : void
+    +synchronized logEvent(threadName : String, event: String) : void
+    -writeLine(line : String) : void
+    -formatMarking(m : int[]) : String
+    +synchronized close() : void
   }
 }
 
-MonitorInterface <|.. Monitor
 Threads --> MonitorInterface
 
 Main +-- WorkerSpec
@@ -261,7 +300,7 @@ note right of Policy
   conflicto. Los contadores se conservan para
   printSummary().
 
-  onTransitionFired() sólo registra disparos globales.
+  recordFire() sólo registra disparos globales.
   No hay campos ni decisiones sticky.
 
   activeConflictIn() conserva el orden actual:
