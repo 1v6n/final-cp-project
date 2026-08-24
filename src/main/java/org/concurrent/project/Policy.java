@@ -158,7 +158,7 @@ public class Policy {
    * @return el residuo acumulado después de sumar el porcentaje preferido
    */
   private int getAccumulatedResidue(ConflictGroup group) {
-    int preferredPercent = preferredPercentage(group);
+    int preferredPercent = getPreferredPercentage(group);
 
     int residue = switch (group) {
       case AGENTS -> agentResidue;
@@ -170,7 +170,14 @@ public class Policy {
     return residue + preferredPercent;
   }
 
-  private int preferredPercentage(ConflictGroup group) {
+  /**
+   * Obtiene el porcentaje preferido para el grupo de conflicto dado según la
+   * política actual.
+   * @param group grupo de conflicto (AGENTS o RESERVATIONS)
+   * @return el porcentaje preferido correspondiente
+   * @throws IllegalArgumentException si la política es NONE o el grupo es NONE
+   */
+  private int getPreferredPercentage(ConflictGroup group) {
     return switch (mode) {
       case BALANCED -> BALANCED_PREFERRED_PERCENTAGE;
       case PRIORITIZED -> switch (group) {
