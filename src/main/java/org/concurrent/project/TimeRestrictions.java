@@ -15,7 +15,6 @@ import java.util.function.LongSupplier;
  */
 public class TimeRestrictions {
     /** Resultado de evaluación temporal para un intento de disparo. */
-    public enum FireEvaluation { ALLOWED, TOO_EARLY }
     public static final long INFINITE_BETA = Long.MAX_VALUE;
 
     private static class TimingConfig {
@@ -117,15 +116,29 @@ public class TimeRestrictions {
 
     /**
      * Refresca estado temporal de todas las transiciones temporizadas desde la
-     * matriz de sensibilización.
+     * matriz de sensibilización y, para la transición recién disparada, reinicia
+     * la ventana de tiempo si permanece sensibilizada.
      *
-     * @param sensitized matriz 1xN de transiciones sensibilizadas.
+     * @param sensitized    matriz 1xN de transiciones sensibilizadas.
+     * @param firedTransition transición que acaba de dispararse.
      */
-    public void updateFromSensitized(DMatrixRMaj sensitized) {
+    public void refreshTimedState(DMatrixRMaj sensitized, int firedTransition) {
         for (Map.Entry<Integer, TimingConfig> entry : timedTransitions.entrySet()) {
             int transition = entry.getKey();
             boolean isSensitized = sensitized.get(0, transition) == 1;
-            updateSensitizationState(transition, isSensitized);
+
+            if (transition == firedTransition) {
+                RuntimeState state = runtimeStates.get(transition);
+
+                if (isSensitized) {
+                    state.enabledAtNs = clockNs.getAsLong();
+                    state.sensitized = true;
+                } else {
+                    state.sensitized = false;
+                }
+            } else {
+                updateSensitizationState(transition, isSensitized);
+            }
         }
     }
 
@@ -184,35 +197,13 @@ public class TimeRestrictions {
      * Espera hasta el próximo instante de disparo permitido de una transición.
      * El cálculo de la demora queda encapsulado junto al estado temporal.
      *
-     * @param transition transición en estado {@link FireEvaluation#TOO_EARLY}.
+     * @param transition transición en estado {TOO_EARLY}.
      * @throws InterruptedException si el hilo es interrumpido durante la espera.
      */
     void awaitUntilEFT(int transition) throws InterruptedException {
         long remainingMs;
         while ((remainingMs = getRemainingToEFT(transition)) > 0) {
             Thread.sleep(remainingMs);
-        }
-    }
-
-    /**
-     * Marca nueva instancia de habilitación tras disparar la transición (si
-     * continúa sensibilizada).
-     *
-     * @param transition        número de transición.
-     * @param isStillSensitized {@code true} si continúa sensibilizada tras el
-     *                          disparo.
-     */
-    public void onTransitionFired(int transition, boolean isStillSensitized) {
-        if (!isTimedTransition(transition)) {
-            return;
-        }
-
-        RuntimeState state = runtimeStates.get(transition);
-        if (isStillSensitized) {
-            state.enabledAtNs = clockNs.getAsLong();
-            state.sensitized = true;
-        } else {
-            state.sensitized = false;
         }
     }
 }
