@@ -192,6 +192,7 @@ package "Política" {
     -selectAny(candidates : List<Integer>) : int
     -selectByPercentage(group : ConflictGroup) : int
     -getAccumulatedResidue(group : ConflictGroup) : int
+    -getPreferredPercentage(group : ConflictGroup) : int
     -preferredPercentage(ConflictGroup group) : int
     -recordConflictDecision(selected : int) : void
     -recordRealFire(transition: int) : void
