@@ -1,132 +1,149 @@
 @startuml
-title Monitor - Flujo general de fireTransition()
+title Monitor - Flujo general de fireTransition(t)
 
 autonumber
 hide footbox
 
 actor "Worker" as W
-participant "Monitor" as M
-participant "Ownership" as O
-participant "entry Semaphore" as E
-participant "RdP" as R
-participant "TimeRestrictions" as T
-participant "Queues" as Q
-participant "Policy" as P
-participant "Invariants" as I
-participant "LogService" as L
+participant "monitor : Monitor" as M
+participant "ownership : Ownership" as O
+participant "entry : Semaphore" as E
+participant "rdp : RdP" as R
+participant "time : TimeRestrictions" as T
+participant "queues : Queues" as Q
+participant "policy : Policy" as P
 
 W -> M : fireTransition(t)
 activate M
 M -> M : validateTransitionIndex(t)
 M -> O : new Ownership()
+activate O
 
 loop hasta disparar o ser interrumpido
-  opt !ownership.isOwned()
+  opt ownership.isOwned() == false
     M -> O : acquire()
-    O -> E : acquire()
+    O -> E : catchMonitor()
+    activate E
+    deactivate E
     O -> O : owned = true
   end
 
   M -> R : isSensitized(t)
-  R --> M : isSensitized
+  activate R
+  R --> M : boolean
+  deactivate R
 
-  alt transición no sensibilizada
+  opt isSensitized(t) == false
     group waitForSensitization(t, ownership)
       M -> Q : incrementWaitingCount(t)
+      activate Q
+      deactivate Q
       M -> O : release()
-      O -> E : release()
-      M -> Q : sem[t].acquire()
-      Q --> M : signal
-      M -> O : wakeFromQueue()
-    end
-    M -> M : continuar loop con ownership heredado
-
-  else transición sensibilizada
-    M -> T : evaluateFire(t)
-    T --> M : FireEvaluation
-
-    alt TOO_EARLY
-      group waitUntilEarliestFireTime(t, ownership)
-        M -> O : release()
-        O -> E : release()
-        M -> T : awaitUntilEarliestFireTime(t)
-        activate T
-        T -> T : getRemainingToEarliest(t)
-        T -> T : Thread.sleep(remainingMs)
-        T --> M : tiempo alcanzado
-        deactivate T
+      opt owned == true
+        O -> E : releaseMonitor()
+        activate E
+        deactivate E
+        O -> O : owned = false
       end
-      M -> M : continuar loop y readquirir entry
+      M -> Q : getSemaphoreForTransition(t).acquire()
+      activate Q
+      Q --> M : signal
+      deactivate Q
+      M -> Q : decrementWaitingCount(t)
+      activate Q
+      deactivate Q
+      M -> O : wakeFromQueue()
+      O -> O : owned = true
+    end
+    note right : continue\nvuelve al inicio del loop
+  end
 
-    else NOT_ENABLED
-      M -> M : throw IllegalStateException
+  M -> T : canFire(t)
+  activate T
+  T --> M : boolean
+  deactivate T
 
-    else ALLOWED
-      note over M,P
-        ALLOWED no consulta la política.
-        La política no autoriza ni difiere disparos.
-      end note
+  alt canFire(t) == true
+    group fireAndReleaseTransition(t, ownership)
+      M -> M : createFiringVector(t)
+      M -> R : fireTransition(firingVector)
+      activate R
+      R -> R : actualizar marcado y sensibilización
+      deactivate R
+      M -> R : getSensitized()
+      activate R
+      R --> M : sensibilizadas
+      deactivate R
+      M -> T: refreshTimedState(sensibilizadas, t)
+      activate T
+      deactivate T
+      M -> M : logFireResult(t)
+      M -> P : recordFire(t)
+      activate P
+      deactivate P
 
-      group fireAndReleaseTransition(t, ownership)
-        M -> M : createFiringVector(t)
-        M -> R : fireTransition(firingVector)
-        R -> R : actualizar marcado y sensibilización
+      group selectWaiterOrRelease(ownership)
+        M -> M : wakingCandidates()
+        note right : devuelve las transiciones sensibilizadas con al menos 1 hilo esperando
 
-        M -> T : updateFromSensitized(R.getSensitized())
-        M -> T : onTransitionFired(t, stillSensitized)
-        M -> M : logFireResult(t)
-        M -> I : checkPInvariants(R.getMarcadoActual())
-        I --> M : resultados
-        M -> L : logFire(..., snapshotMarking(), pinv)
-        M -> P : onTransitionFired(t)
-
-        group selectWaiterOrRelease(ownership)
-          M -> M : wakingCandidates()
-          loop para cada transición u
-            M -> R : isSensitized(u)
-            M -> Q : hasWaiters(u)
-          end
-          M <-- M : candidatos reales
-
-          alt no hay candidatos
-            M -> O : release()
-            O -> E : release()
-
-          else hay candidatos reales
-            M -> P : choose(candidates)
-            activate P
-            P -> P : si hay conflicto real, obtener p
-            P -> P : A' = A + p; elegir según carry de 100
-            P -> P : guardar residuo y registrar decisión
-            P --> M : selectedTransition
-            deactivate P
-
-            M -> M : signalOneWaiter(selectedTransition)
-            M -> Q : signalOne(selectedTransition)
-            M -> O : handoff()
+        alt no hay candidatos
+          M -> O : release()
+          opt owned == true
+            O -> E : releaseMonitor()
+            activate E
+            deactivate E
             O -> O : owned = false
           end
+
+        else hay candidatos reales
+          M -> P : choose(candidatos)
+          activate P
+          note right: si no hay politica o no hay conflicto real\nelige una transicion al azar,\nsino aplica Bresenham y elige la transicion por porcentaje
+          P --> M : selectedTransition
+          deactivate P
+
+          M -> Q : signalOne(selectedTransition)
+          activate Q
+          deactivate Q
+          M -> O : handoff()
+          O -> O : owned = false
         end
       end
-
-      M -> M : return true
-      break transición disparada
     end
+
+  else canFire(t) == false (TOO_EARLY)
+    M -> O : release()
+    opt owned == true
+      O -> E : releaseMonitor()
+      activate E
+      deactivate E
+      O -> O : owned = false
+    end
+    M -> T : awaitUntilEFT(t)
+    activate T
+    loop hasta alcanzar EFT
+      T -> T : getRemainingToEFT(t)
+      T -> T : Thread.sleep(remainingMs)
+    end
+    T --> M : tiempo alcanzado
+    deactivate T
+    note right : continue\nvuelve al inicio del loop
   end
 end
 
 M -> O : finally: release()
+opt owned == true
+  O -> E : releaseMonitor()
+  activate E
+  deactivate E
+  O -> O : owned = false
+end
 note right of O
-  No-op después de release() o handoff().
+  No-op si owned == false
+  (después de handoff o release previo).
 end note
-M --> W : true / false si hubo interrupción
+deactivate O
+M --> W : true si disparó, false si interrumpido
 deactivate M
-
-note over P,Q
-  NONE elige aleatoriamente.
-  BALANCED usa p = 50; PRIORITIZED usa p configurable.
-  Ambos sólo aplican el acumulador de Bresenham
-  si ambas transiciones del conflicto son candidatas reales.
-end note
 
 @enduml
