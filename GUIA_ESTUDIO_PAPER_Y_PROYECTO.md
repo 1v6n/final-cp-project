@@ -1,40 +1,44 @@
-# Guía de estudio: paper de cantidad y responsabilidad de hilos
+# Guía de estudio del paper y aplicación al proyecto
 
-> **Propósito.** Entender el paper `docs/sources/paper.pdf` y usarlo como criterio para
-> analizar la Red de Petri (RdP), los hilos y el monitor de este proyecto.
+> **Propósito.** Estudiar el paper `docs/sources/paper.pdf` sin mezclarlo con las
+> decisiones de esta implementación y, después, aplicar sus ideas a la Red de Petri
+> y a la arquitectura concurrente del proyecto.
 >
-> **Lectura recomendada:** estudiar primero las secciones 1 a 7 de esta guía;
-> después recorrer las secciones 8 a 11 con `RdP.java`, `Main.java` y
-> `Threads.java` abiertos.
+> **Lectura recomendada:** estudiar primero la Parte I. Una vez entendido el método
+> del artículo, recorrer la Parte II con el código del proyecto abierto. La Parte III
+> reúne la verificación y las preguntas para la defensa.
 
-> **Estado de esta guía.** La auditoría de implementación corresponde a la
-> configuración vigente de `Main.java`: seis workers persistentes, una instancia
-> por path, `timed=true` y `PolicyMode.PRIORITIZED`, salvo que una sección indique
-> explícitamente que está describiendo una versión histórica.
+> **Regla de lectura:** la Parte I explica el paper. La Parte II empieza a aplicar el
+> método a nuestro proyecto. La Parte III documenta cómo comprobar los resultados y
+> qué afirmaciones se pueden defender.
 
 ## Cómo leer las afirmaciones
 
-La guía separa deliberadamente la fuente de cada conclusión:
+La guía separa la fuente de cada conclusión y limita las etiquetas según la parte
+del documento.
+
+En la Parte I se usan solamente:
 
 - **[PAPER]**: está respaldado por el artículo, con sección/página indicada.
-- **[CONSIGNA]**: es un requisito del TP o de su documentación.
-- **[PROYECTO]**: se observa directamente en el código vigente.
-- **[INFERENCIA]**: se deduce del modelo, la alcanzabilidad o una ecuación.
-- **[DECISIÓN]**: elección de implementación no impuesta por el paper.
+- **[INTERPRETACIÓN]**: lectura razonada de una definición o procedimiento del paper.
+- **[AMBIGÜEDAD]**: punto que el artículo no formaliza por completo.
+
+En las Partes II y III se agregan las etiquetas de aplicación:
+
+- **[CONSIGNA]**: requisito del TP o de su documentación.
+- **[PROYECTO]**: comportamiento observado directamente en el código vigente.
+- **[INFERENCIA]**: conclusión deducida del modelo, la alcanzabilidad o una ecuación.
+- **[DECISIÓN DEL PROYECTO]**: elección que el paper no impone.
 - **[EVIDENCIA]**: resultado de una ejecución o herramienta reproducible.
-- **[ABIERTA]**: ambigüedad que debe explicarse, no ocultarse.
 
-Cuando el paper no formaliza un detalle —por ejemplo, cómo asignar una plaza
-frontera a dos segmentos— la guía lo marca como **[ABIERTA]** y propone una
-convención **[DECISIÓN]**, en lugar de presentarla como una regla del artículo.
-
-Para el análisis técnico de segmentación, temporización y política, consultar
-`docs/POLITICA_Y_JUSTIFICACION.md`. Para reproducir resultados de ejecución,
-seguir los criterios del `README.md` (sección "Criterios de aceptación").
+Cuando una decisión del proyecto no está fijada por el paper, se explica en la Parte
+II y no se presenta como una regla del artículo.
 
 ---
 
 ## Índice
+
+### Parte I. Estudio del paper
 
 1. [Qué problema resuelve el paper](#1-qué-problema-resuelve-el-paper)
 2. [Vocabulario mínimo y formalismo](#2-vocabulario-mínimo-y-formalismo)
@@ -43,13 +47,25 @@ seguir los criterios del `README.md` (sección "Criterios de aceptación").
 5. [Los tres algoritmos del paper](#5-los-tres-algoritmos-del-paper)
 6. [Ejemplo del paper](#6-ejemplo-del-paper)
 7. [Cómo aplicar el método sin cometer errores](#7-cómo-aplicar-el-método-sin-cometer-errores)
+
+### Parte II. Aplicación al proyecto
+
 8. [Aplicación a la agencia de viajes](#8-aplicación-a-la-agencia-de-viajes)
 9. [Responsabilidades teóricas de nuestra red](#9-responsabilidades-teóricas-de-nuestra-red)
 10. [Auditoría de la implementación actual](#10-auditoría-de-la-implementación-actual)
+
+### Parte III. Verificación y defensa
+
 11. [Cómo verificar y defender el resultado](#11-cómo-verificar-y-defender-el-resultado)
 12. [Glosario y preguntas de defensa](#12-glosario-y-preguntas-de-defensa)
 
 ---
+
+## Parte I. Estudio del paper
+
+Las secciones 1 a 7 describen el artículo y su método en términos generales. En esta
+parte no se usan las clases, las plazas ni los resultados de nuestra implementación.
+La aplicación concreta comienza en la Parte II.
 
 ## 1. Qué problema resuelve el paper
 
@@ -72,7 +88,7 @@ confundirlos.
 | Segmentos o responsabilidades           | ¿Qué secuencia fija debe ejecutar cada tipo de hilo?                                      | Cortando los T-invariantes en forks y joins.                                    |
 | Máximo de hilos necesarios              | ¿Cuántas instancias de cada segmento hacen falta para soportar el paralelismo del modelo? | Máximo marcado de las plazas de acción de cada segmento y suma de esos máximos. |
 
-**[INFERENCIA/PROYECTO]** Por lo tanto, estas afirmaciones no son equivalentes:
+**[INTERPRETACIÓN]** Por lo tanto, estas afirmaciones no son equivalentes:
 
 ```text
 “La red tiene como máximo 5 procesos activos”
@@ -81,16 +97,16 @@ confundirlos.
 “El sistema necesita exactamente 7 instancias de hilo”
 ```
 
-Una implementación puede crear más workers persistentes que procesos activos,
-porque los workers pueden estar bloqueados, o puede usar un pool. Pero si se dice
-que una cantidad fue **obtenida por el algoritmo del paper**, hay que ejecutar los
-tres algoritmos y mostrar el cálculo.
+Una arquitectura concreta puede crear más unidades de ejecución persistentes que
+procesos activos, porque algunas pueden estar bloqueadas o porque puede reutilizarse
+un pool. Si se afirma que una cantidad fue **obtenida por el método del paper**, hay
+que ejecutar los tres algoritmos y mostrar el cálculo que lleva a ese número.
 
 ### 1.1 Alcance del paper
 
-**[PAPER, §3, PDF pp. 3–5]** El trabajo está orientado a sistemas embebidos, reactivos y dirigidos por eventos,
-modelados como RdP no autónomas de la clase **S3PR** (_Simple Sequential
-Processes with Resources_). La idea central sigue siendo útil para el TP:
+**[PAPER, §3, PDF pp. 3–5]** El trabajo está orientado a sistemas embebidos, reactivos
+y dirigidos por eventos, modelados como RdP no autónomas de la clase **S3PR**
+(_Simple Sequential Processes with Resources_). Su idea central es:
 
 - los procesos se representan como trayectorias secuenciales;
 - las plazas de recurso representan elementos compartidos;
@@ -105,22 +121,18 @@ La jerarquía que usa el artículo es relevante:
 2. **S2PR**: proceso secuencial simple con recursos.
 3. **S3PR**: composición de procesos S2PR que comparten recursos.
 
-El TP conserva esta estructura, pero abstrae la capa de eventos externos: en el
-paper un evento puede llegar a un manejador que direcciona la ejecución, mientras
-que aquí los workers persistentes llaman directamente al monitor. Esa diferencia
-es una **[DECISIÓN DEL PROYECTO]**, no una implementación completa de toda la
-arquitectura de eventos del artículo.
-
-El TP ejecuta una simulación Java de una RdP ordinaria. No modela explícitamente
-eventos externos no autónomos, pero sí conserva la estructura relevante: recursos,
-conflictos, colas, disparos y políticas.
+El artículo distingue el modelo de la red de la forma concreta en que un sistema
+recibe eventos y ejecuta sus responsabilidades. Esa separación permite adaptar la
+arquitectura a distintos entornos sin cambiar la definición de la red ni sus reglas
+de disparo. Las decisiones de esa adaptación pertenecen a la implementación, no a
+los tres algoritmos matemáticos.
 
 ---
 
 ## 2. Vocabulario mínimo y formalismo
 
-Esta sección no pretende enseñar RdP desde cero: fija la notación que se usará al
-auditar el código.
+Esta sección no pretende enseñar RdP desde cero: fija la notación necesaria para
+seguir los algoritmos del artículo.
 
 ### 2.1 Red, marcado y habilitación
 
@@ -139,9 +151,9 @@ donde:
 - `M0` es el **marcado inicial**, es decir, la cantidad inicial de tokens por
   plaza.
 
-Un **token** no es necesariamente un hilo Java. En este TP representa un cliente
-o trabajo en tránsito por el sistema. El paper lo usa para inferir cuántas
-instancias de ejecución pueden coexistir.
+Un **token** no es necesariamente una unidad de ejecución. En el modelo representa
+un cliente o trabajo en tránsito por el sistema. El paper lo usa para inferir
+cuántas instancias de ejecución pueden coexistir.
 
 El marcado actual se escribe como vector:
 
@@ -170,8 +182,9 @@ $$
 M' = M + C\sigma
 $$
 
-En el proyecto esta ecuación está implementada en
-`src/main/java/org/concurrent/project/RdP.java:75-105`.
+Esta ecuación es la base común de los algoritmos del paper y de cualquier
+implementación que ejecute la red. La forma concreta de llevarla a código se
+analiza recién en la Parte II.
 
 ### 2.2 Qué es una plaza de acción
 
@@ -186,9 +199,9 @@ Las restantes son las **plazas de acción** (`PA`). Si un token está en una de 
 el modelo interpreta que existe una actividad/proceso en curso o esperando una
 acción del sistema.
 
-Esta es una definición del algoritmo. No equivale necesariamente a “un hilo Java
-que actualmente está usando CPU”. Un proceso puede estar bloqueado y continuar
-contando como activo en el sentido del modelo.
+Esta es una definición del modelo. No equivale necesariamente a una unidad de
+ejecución que esté usando CPU en ese instante. Un proceso puede estar bloqueado y
+continuar contando como activo en el sentido de la red.
 
 ### 2.3 Recursos y restricciones
 
@@ -290,25 +303,18 @@ con un criterio —balance, prioridad, etc.—.
 Estos términos se usan con cierta ambigüedad en el paper y en la consigna. Es
 importante distinguir su topología.
 
-| Estructura    | Significado                                                                    | Ejemplo conceptual     |
-| ------------- | ------------------------------------------------------------------------------ | ---------------------- |
-| Fork/decisión | Una plaza habilita alternativas de transición.                                 | `P -> T2` o `P -> T3`. |
-| Merge OR      | Varias rutas producen tokens en una misma plaza; cada token puede seguir solo. | `T4 -> P9 <- T5`.      |
-| Join AND      | Una transición requiere tokens provenientes de dos o más rutas a la vez.       | `P_a,P_b -> T_join`.   |
+| Estructura    | Significado                                                                    | Ejemplo conceptual       |
+| ------------- | ------------------------------------------------------------------------------ | ------------------------ |
+| Fork/decisión | Una plaza habilita alternativas de transición.                                 | `P -> T2` o `P -> T3`.   |
+| Merge OR      | Varias rutas producen tokens en una misma plaza; cada token puede seguir solo. | `T_a -> P_merge <- T_b`. |
+| Join AND      | Una transición requiere tokens provenientes de dos o más rutas a la vez.       | `P_a,P_b -> T_join`.     |
 
-En la red de este TP, `P9` y `P14` son técnicamente **merges OR**, no joins AND:
-
-```text
-T4 -> P9 <- T5       T8 -> P14 <- T10
-```
-
-No hay una transición que requiera simultáneamente un token de cada rama. Sin
-embargo, el paper llama _join_ a la convergencia de T-invariantes y la consigna usa
-esa noción para asignar responsabilidades. En el informe conviene decirlo con
-precisión:
-
-> Topológicamente es un merge OR; para el algoritmo de responsabilidades se lo
-> trata como punto de convergencia de los invariantes.
+Una red concreta puede tener una convergencia OR aunque el paper use _join_ para
+referirse, de forma más general, al punto donde vuelven a encontrarse varios
+T-invariantes. Antes de asignar responsabilidades hay que mirar la topología real:
+si ninguna transición consume simultáneamente tokens de las ramas, no existe un
+join AND. En ese caso puede hablarse de una convergencia o merge OR y explicar qué
+responsabilidad común se adopta después de ella.
 
 ### 3.5 Qué es un segmento de responsabilidad
 
@@ -322,8 +328,9 @@ correcto:  mi responsabilidad es [T2, T5]
 incorrecto: si ocurre X disparo T2; si no, disparo T3
 ```
 
-El segundo caso incorpora una decisión de conflicto dentro del hilo. El paper
-quiere que esa decisión se concentre en `Policy`, invocada desde el monitor.
+El segundo caso incorpora una decisión de conflicto dentro del hilo. La arquitectura
+del paper concentra esa decisión en el mecanismo de coordinación, no en el segmento
+que ejecuta la secuencia.
 
 ---
 
@@ -342,35 +349,36 @@ mezclar la lógica formal con el mecanismo de concurrencia.
 | Hilo/worker          | Ejecutar su secuencia fija y las acciones asociadas.                                      | Inspeccionar o cambiar el marcado por fuera del monitor. |
 
 **[PAPER]** El flujo arquitectónico general separa el evento, el manejador, el
-worker, el monitor y las acciones. En este TP la capa de eventos se abstrae y el
-worker llama directamente al monitor.
+worker, el monitor y las acciones. Una implementación puede omitir o adaptar una
+capa, pero debe declarar esa diferencia cuando se compare con la figura del paper.
 
-El flujo simplificado del proyecto es:
+El flujo abstracto puede resumirse así:
 
 ```text
-worker solicita fireTransition(Ti)
-              |
-              v
+worker solicita el disparo de una transición
+               |
+               v
 monitor toma exclusión mutua
               |
               +-- Ti no sensibilizada --> worker espera en cola de Ti
               |
-              +-- Ti sensibilizada --> monitor dispara directamente
-                                         |
-                                         v
-                              se calculan waiters elegibles
-                                         |
-                       Policy elige uno sólo para el handoff
+                                          +-- transición sensibilizada --> monitor dispara
+                                          |
+                                          v
+                               se calculan solicitantes elegibles
+                                          |
+                        la política selecciona el siguiente solicitante
 ```
 
-**[PROYECTO]** `Policy.choose()` no veta un disparo directo que ya está
-habilitado. Se invoca después de un disparo exitoso, cuando el monitor debe
-seleccionar qué waiter elegible recibe el handoff. Esta precisión es importante:
-la política decide la selección de espera, no todos los disparos de la RdP.
+**[INTERPRETACIÓN]** La política resuelve una elección entre alternativas que el
+monitor considera elegibles. No modifica directamente el marcado. El momento exacto
+en que se consulta —por ejemplo, antes de un disparo o durante una transferencia de
+control a un solicitante bloqueado— depende del diseño de la implementación y no
+debe confundirse con la definición de la red.
 
 Una cola por transición equivale a una variable de condición por transición. No
-significa que haya una cola por cada cliente: varios workers pueden esperar la
-misma transición.
+significa que haya una cola por cada cliente: varias unidades de ejecución pueden
+esperar la misma transición.
 
 ---
 
@@ -402,8 +410,8 @@ Para cada T-invariante `IT_i`:
 
 **Qué demuestra:** el máximo paralelismo expresado por el modelo.
 
-**Qué no demuestra:** cuántos objetos `Thread` habrá en Java, ni cuántas
-responsabilidades distintas existen.
+**Qué no demuestra:** cuántas responsabilidades distintas existen ni cómo se
+implementará cada una en una plataforma concreta.
 
 ### 5.2 Algoritmo 2: responsabilidades de los hilos
 
@@ -450,11 +458,11 @@ rama derecha ---/
 
 hay segmentos separados antes del punto de unión y **un segmento común posterior**.
 
-**[PAPER]** Esa es la segmentación que produce el algoritmo 4.2. **[DECISIÓN DE
-IMPLEMENTACIÓN]** El artículo no analiza si un runtime puede implementar ese
-segmento con un pool o con varios workers; por eso duplicar la responsabilidad
-posterior sería un refinamiento de software, no una nueva segmentación derivada del
-paper.
+**[PAPER]** Estos son los casos que el algoritmo 4.2 usa para separar
+responsabilidades. **[AMBIGÜEDAD]** El artículo no define si una implementación
+concreta debe ejecutar el segmento común con una sola instancia, con un pool o con
+varias unidades reutilizables. Esa elección queda fuera de la segmentación
+matemática.
 
 ### 5.3 Algoritmo 3: máximo de hilos por segmento
 
@@ -462,10 +470,10 @@ paper.
 indica repetir la idea del algoritmo 1 por segmento: determinar sus plazas de
 acción, examinar los marcados posibles y tomar el “marcado máximo”.
 
-**[ABIERTA/INFERENCIA]** El paper no define con una ecuación cómo ordenar marcados
+**[AMBIGÜEDAD]** El paper no define con una ecuación cómo ordenar marcados
 multidimensionales ni explicita cómo resolver plazas frontera compartidas. Para
-aplicar el método a esta red, esta guía adopta la siguiente formalización
-operativa, por analogía con §4.1:
+aplicar el método de manera reproducible a una red concreta, usamos la siguiente
+formalización operativa, por analogía con §4.1:
 
 1. Determinar las plazas de acción `PA(S_i)` asociadas a cada segmento.
 2. Para cada marcado alcanzable, proyectar el marcado sobre `PA(S_i)`.
@@ -481,12 +489,12 @@ operativa, por analogía con §4.1:
    H_{necesarios}=\sum_i h_i
    $$
 
-Esta ecuación es una **[DECISIÓN METODOLÓGICA DE LA GUÍA]**, no una fórmula textual
-del artículo. El resultado es una capacidad de ejecución por responsabilidades, no el número de
-tokens globales ni necesariamente la cantidad de threads creados al arrancar la
-JVM.
+Esta ecuación es una **[INTERPRETACIÓN]** operativa de la guía, no una fórmula textual
+del artículo. El resultado es una capacidad de ejecución por responsabilidades. No
+es el número de tokens globales ni determina por sí solo la cantidad de unidades de
+ejecución que se crearán al iniciar un programa.
 
-### 5.4 Convención de fronteras para esta adaptación
+### 5.4 Qué debe fijarse antes de aplicar el algoritmo 4.3
 
 Antes de sumar los `h_i`, documentar estas tres decisiones:
 
@@ -499,12 +507,12 @@ posterior común después de una unión, pero no prescribe una partición global
 plazas frontera ni dice literalmente que una plaza no pueda aparecer en más de un
 cálculo.
 
-**[DECISIÓN METODOLÓGICA DE LA GUÍA]** Al adaptar el método a una red donde un
-merge es inmediatamente seguido por otro fork, asignaremos cada plaza frontera a
-una única responsabilidad o declararemos una responsabilidad de despacho. Esto
-evita inflar artificialmente la suma de capacidades. La convención elegida debe
-quedar escrita antes de calcular los `h_i`; no se puede elegir primero un número de
-threads y ajustar después las plazas para obtenerlo.
+**[INTERPRETACIÓN]** En una red donde un merge es inmediatamente seguido por otro
+fork, conviene asignar cada plaza frontera a una única responsabilidad o declarar
+una responsabilidad de despacho. Esto evita inflar artificialmente la suma de
+capacidades. La convención debe quedar escrita antes de calcular los `h_i`; no se
+debe elegir primero un número de unidades de ejecución y ajustar después las plazas
+para obtenerlo.
 
 ---
 
@@ -578,8 +586,8 @@ Usar este orden, no al revés:
 6. Cortar los T-invariantes en forks y convergencias
 7. Asignar plazas de acción a segmentos sin duplicarlas
 8. Calcular capacidad por segmento
-9. Recién ahora diseñar workers, pool o threads Java
-10. Verificar la ejecución mediante logs e invariantes
+9. Recién ahora elegir cómo mapear las responsabilidades a unidades de ejecución
+10. Verificar el modelo y la ejecución con propiedades observables
 ```
 
 Errores frecuentes:
@@ -588,13 +596,23 @@ Errores frecuentes:
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | Usar la cantidad de tokens iniciales como cantidad de hilos.      | El máximo se obtiene sobre todos los marcados alcanzables.                                              |
 | Contar recursos como actividades.                                 | Un token en un recurso disponible no representa trabajo en curso.                                       |
-| Hacer que el worker elija entre ramas.                            | Duplica la responsabilidad de `Policy`.                                                                 |
+| Hacer que una unidad de ejecución elija entre ramas.              | Duplica la decisión de coordinación dentro de una responsabilidad.                                      |
 | Separar transiciones consecutivas sin justificar una frontera.    | No es el algoritmo de segmentación del paper; puede ser una optimización, pero debe demostrarse aparte. |
 | Duplicar el tramo común posterior a un join.                      | Pierde la responsabilidad única que busca el caso 3.                                                    |
 | Decir que una plaza sólo tendrá un token por un recurso anterior. | Un recurso puede serializar llegadas sin impedir acumulación en una plaza posterior.                    |
-| Concluir que el código “cumple” sólo porque termina.              | Deben verificarse marcado, P-invariantes, T-invariantes y política.                                     |
+| Concluir que una ejecución es correcta sólo porque termina.       | Deben verificarse el marcado, los invariantes, la segmentación y el mecanismo de coordinación.          |
 
 ---
+
+## Parte II. Aplicación al proyecto
+
+Desde esta sección dejamos de describir el paper en abstracto. Cada resultado se
+relaciona con la Red de Petri, la consigna y el código vigente. Cuando una decisión
+no está impuesta por el artículo, se la marca como una decisión del proyecto.
+
+La auditoría de implementación corresponde a la configuración vigente de `Main.java`:
+seis workers persistentes, una instancia por path, `timed=true` y
+`PolicyMode.PRIORITIZED`, salvo que se indique explícitamente otra cosa.
 
 ## 8. Aplicación a la agencia de viajes
 
@@ -602,8 +620,10 @@ Las fuentes de verdad para esta sección son:
 
 - modelo: `src/main/java/org/concurrent/project/RdP.java`;
 - invariantes esperados: `regex/TInvariants.yaml`;
-- consigna: `docs/sources/assignment.pdf`;
-- informe vigente de referencia: `docs/sources/submitted-report.pdf`.
+- análisis estructural: `analysis/model.yaml`, `analysis/paper-config.yaml` y
+  `analysis/analyze_paper.py`;
+- consigna: `docs/sources/enunciado.pdf`;
+- informe entregado de referencia: `docs/sources/informe-entregado.pdf`.
 
 ### 8.1 Marcado inicial y lugares
 
@@ -787,9 +807,8 @@ marcado donde los cinco clientes están en `P3`:
 P0=0, P3=5, P1=1, P4=0, P6=1, P7=1, P10=1
 ```
 
-La suma de tokens en `PA` es `5`. Una enumeración independiente de la
-alcanzabilidad de la topología implementada encuentra **618 marcados alcanzables**
-y confirma ese máximo.
+La suma de tokens en `PA` es `5`. El analizador reproducible de `analysis/` enumera
+**618 marcados alcanzables** de la topología implementada y confirma ese máximo.
 
 $$
 \boxed{H_{activos}=5}
@@ -829,8 +848,19 @@ S_D: T6,T9,T10  S_E: T7,T8
 S_F:       T11
 ```
 
-Esta tabla responde a **“qué responsabilidad tiene cada tipo de hilo”**, no aún a
-“cuántas instancias de cada tipo hacen falta”.
+**[INFERENCIA]** Los seis segmentos son nuestra aplicación de las reglas del
+algoritmo 4.2 a la topología y a los cuatro T-invariantes de esta red. El paper
+aporta los criterios para separar caminos comunes, forks y convergencias, pero no
+define un procedimiento que reciba esta matriz y devuelva automáticamente una
+partición única.
+
+**[EVIDENCIA]** Los segmentos se declaran en `analysis/paper-config.yaml`. La función
+`validate_segments()` de `analysis/analyze_paper.py` comprueba que cubran todas las
+transiciones exactamente una vez y que cada T-invariante pueda descomponerse en
+segmentos completos.
+
+Esta tabla responde a **“qué responsabilidad tiene cada tipo de hilo”**, no todavía
+a **“cuántas instancias de cada tipo hacen falta”**.
 
 ### 9.3 La dificultad real: fronteras P3 y P9
 
@@ -838,8 +868,31 @@ Nuestra red tiene una particularidad que el ejemplo del paper no desarrolla en
 detalle: `P9` es a la vez el merge de las ramas de agentes y la plaza previa al
 segundo fork. Además, `P3` es una cola que alimenta dos ramas.
 
-Como `P3` y `P9` son plazas de acción, una aplicación rigurosa del algoritmo 4.3
-debe decidir a qué segmento pertenecen, **sin contarlas dos veces**.
+Como `P3` y `P9` son plazas de acción situadas entre responsabilidades, una
+aplicación rigurosa del algoritmo 4.3 debe decidir cómo tratarlas en los cálculos
+por segmento, sin contarlas dos veces.
+
+**[DECISIÓN DEL PROYECTO]** Para este análisis tratamos `P3` y `P9` como fronteras
+de despacho. Es decir:
+
+- `P3` queda entre `S_A` y las ramas `S_B`/`S_C`.
+- `P9` queda entre `S_B`/`S_C` y las ramas `S_D`/`S_E`.
+- Ambas plazas siguen siendo plazas de acción para calcular el máximo global de
+  actividad, pero no se asignan a las plazas internas de ningún segmento.
+- `P14` se asigna al segmento común `S_F`, cuya secuencia es `[T11]`.
+
+La decisión está declarada en `analysis/paper-config.yaml` mediante
+`dispatch_boundaries: [P3, P9]`. No es una regla explícita del paper. Es la
+convención que usamos para convertir su descripción de plazas asociadas a segmentos
+en un cálculo reproducible para esta topología. La palabra "despacho" describe su
+posición en el análisis. No implica crear un worker o un componente adicional.
+
+Con esta convención, las plazas internas son:
+
+```text
+S_A: {P2}       S_B: {P5}       S_C: {P8}
+S_D: {P11,P13}  S_E: {P12}      S_F: {P14}
+```
 
 Valores máximos obtenidos del grafo de alcanzabilidad:
 
@@ -877,38 +930,45 @@ $$
 invariante global y por un marcado alcanzable con `P3=5`. Eso no determina por sí
 solo cuántos objetos `Thread` debe crear Java.
 
-**[ABIERTA]** Para obtener capacidades `h_i` comparables hay que fijar primero una
-convención para P3, P9 y P14. El paper no especifica por completo una topología en
-la que un merge sea seguido inmediatamente por otro fork. La guía adopta la
-convención explicada en §5.4; otra convención podría producir otra suma sin que el
+**[AMBIGÜEDAD]** Para obtener capacidades `h_i` comparables hay que fijar primero una
+convención para las plazas frontera. El paper no especifica por completo una
+topología en la que un merge sea seguido inmediatamente por otro fork. La convención
+concreta adoptada para esta red está explicada arriba y se declara en
+`analysis/paper-config.yaml`. Otra convención podría producir otra suma sin que el
 paper permita elegirla arbitrariamente.
 
-**[PAPER]** La segmentación posterior a una convergencia produce un único segmento
-común. En esta red, la responsabilidad lógica común es:
+**[PAPER]** El paper propone un único segmento común después de una convergencia.
+**[INFERENCIA]** Al aplicar esa regla a esta red, la responsabilidad lógica común es:
 
 ```text
 S_F = [T11]
 ```
 
-**[INFERENCIA]** Como `M(P14)` puede llegar a `5`, una capacidad teórica de cinco
-para la frontera final es una posibilidad del modelo bajo la formalización adoptada.
-**[DECISIÓN]** Ejecutar esa responsabilidad con un solo worker persistente puede
-ser suficiente en rendimiento, pero no debe presentarse como si fuera el resultado
-literal de `h_F`.
+**[EVIDENCIA]** El análisis de alcanzabilidad obtiene `M(P14)=5` como máximo. Por
+eso la capacidad teórica de cinco para la frontera final se sigue del modelo bajo la
+formalización adoptada.
+**[DECISIÓN DEL PROYECTO]** Ejecutar esa responsabilidad con un solo worker
+persistente es la decisión vigente. Su suficiencia en rendimiento requiere una
+medición aparte. No debe presentarse como si fuera el resultado literal de `h_F`.
 
 ### 9.5 Segmentos lógicos, capacidad y workers persistentes
 
-| Concepto                      |                                 Resultado actual | Procedencia                                |
-| ----------------------------- | -----------------------------------------------: | ------------------------------------------ |
-| Clientes activos máximos      |                                                5 | [INFERENCIA] del marcado y alcanzabilidad  |
-| Segmentos lógicos             |                                                6 | [PAPER] aplicado a los forks/convergencias |
-| Workers persistentes          |                                                6 | [PROYECTO]/[DECISIÓN]                      |
-| Instancias por segmento       |                                                1 | [DECISIÓN] pragmática                      |
-| Capacidad formal por segmento | Pendiente de convención y evidencia reproducible | [ABIERTA]                                  |
+| Concepto                 |                                       Resultado actual | Procedencia                               |
+| ------------------------ | -----------------------------------------------------: | ----------------------------------------- |
+| Clientes activos máximos |                                                      5 | [INFERENCIA] del marcado y alcanzabilidad |
+| Segmentos lógicos        |                                                      6 | [INFERENCIA] aplicación del algoritmo 4.2 |
+| Workers persistentes     |                                                      6 | [PROYECTO] / [DECISIÓN DEL PROYECTO]      |
+| Instancias por segmento  |                                                      1 | [DECISIÓN DEL PROYECTO] pragmática        |
+| Capacidades internas     | `[1,1,1,1,1,5]`, suma `10` bajo la convención adoptada | [EVIDENCIA] / [DECISIÓN DEL PROYECTO]     |
 
 Los tokens de una RdP ordinaria no tienen identidad. Un worker que llega a `T11`
 puede consumir cualquier token disponible en `P14`; no existe una asociación
 implícita entre un objeto Java y un cliente concreto.
+
+El analizador reproducible de `analysis/` recorre los marcados alcanzables y calcula
+esas capacidades con la misma convención declarada en `analysis/paper-config.yaml`.
+Por eso el total `10` debe leerse como una capacidad teórica de responsabilidades,
+no como la cantidad de workers que el programa debe crear.
 
 ---
 
@@ -969,12 +1029,18 @@ porcentajes describen decisiones de handoff, no todos los disparos globales.
 
 ### 10.4 Evidencia de ejecución
 
-**[EVIDENCIA]** Los resultados no deben quedar embebidos como hechos permanentes
-en esta guía. Cada corrida debe registrar configuración, commit, fecha, cantidad de
-workers, modo de política, alfas y resultado del analizador, según los criterios
-del `README.md` (sección "Criterios de aceptación").
+**[EVIDENCIA]** Los resultados de una corrida no deben quedar embebidos como hechos
+permanentes en esta guía. Cada ejecución debe registrar configuración, commit, fecha,
+cantidad de workers, modo de política, alfas y resultado del analizador, según los
+criterios del `README.md` (sección "Criterios de aceptación").
 
 ---
+
+## Parte III. Verificación y defensa
+
+Esta parte reúne las comprobaciones que permiten respaldar la aplicación anterior.
+Separa las propiedades verificadas durante la ejecución, los análisis estructurales
+offline y las comprobaciones específicas de una traza.
 
 ## 11. Cómo verificar y defender el resultado
 
@@ -987,8 +1053,10 @@ Para poder afirmar que la implementación representa la RdP:
 2. **Marcado:** tras cada disparo, comprobar que no haya tokens negativos y que se
    aplique `M'=M+C\sigma`.
 3. **P-invariantes:** verificar las seis ecuaciones luego de cada disparo.
-4. **T-invariantes:** extraer la traza completa y reconocer los cuatro ciclos del
-   YAML mediante regex.
+4. **T-invariantes:** validar algebraicamente las cuatro secuencias desde `M0` y,
+   por separado, analizar la traza para comprobar qué ciclos fueron observados.
+   El regex es una comprobación post-ejecución de esa traza, no una demostración
+   formal para todas las ejecuciones posibles.
 5. **Política:** separar disparos reales, llamadas de handoff, candidatos únicos,
    oportunidades con ambos waiters elegibles y selecciones condicionadas a esas
    oportunidades. No llamar “disparo forzado” a todo lo que no pasó por `Policy`.
@@ -1021,9 +1089,16 @@ analizador regex debe explicar y listar los remanentes, no ocultarlos.
 Desde la raíz del proyecto:
 
 ```bash
+python3 -m unittest discover -s analysis/tests -v
+python3 analysis/analyze_paper.py
 scripts/run.sh
 python3 regex/InvariantsAnalyzer.py --log logs/run.log --inv regex/TInvariants.yaml
 ```
+
+El primer comando comprueba el analizador. El segundo genera el análisis estructural
+en `target/paper-analysis/`, incluyendo la alcanzabilidad, los invariantes, la
+segmentación y las capacidades. Los dos últimos comandos ejecutan Java y analizan la
+traza producida.
 
 Para aceptar una corrida como evidencia, verificar:
 
@@ -1032,6 +1107,7 @@ Invariantes detectados: 186
 Resultado: OK
 No hay PINV_FAIL en logs/run.log
 Los conteos de política cumplen el modo elegido
+El análisis estructural termina con todos sus checks en true
 ```
 
 El análisis debe repetirse para `BALANCED` y `PRIORITIZED` si se pretende afirmar
@@ -1047,14 +1123,13 @@ la elegida con honestidad:
 - Seis workers, una instancia por segmento lógico:
   `[T0,T1]`, `[T2,T5]`, `[T3,T4]`, `[T6,T9,T10]`, `[T7,T8]` y `[T11]`.
 - `T11` es una responsabilidad común explícita posterior a `P14`.
-- La cantidad de workers es una **[DECISIÓN]** de implementación, no una afirmación
+- La cantidad de workers es una **[DECISIÓN DEL PROYECTO]** de implementación, no una afirmación
   de que el algoritmo 4.3 produzca automáticamente el número seis.
 - La capacidad teórica por segmento queda documentada aparte, con la convención de
   fronteras y la evidencia de alcanzabilidad.
 
-Es la configuración más clara para defender la segmentación del paper y coincide
-con la solución aprobada de `Entrega`, aunque debe distinguirse capacidad formal
-de cantidad de workers persistentes.
+Es la configuración más clara para defender la segmentación del paper. Debe
+distinguirse la capacidad formal de la cantidad de workers persistentes.
 
 #### Opción B: experimento de multiplicidad
 
@@ -1127,7 +1202,7 @@ evidencia; queda registrada como caso histórico en el `CHANGELOG.md`.
 ### 12.3 Referencias locales
 
 - Paper base: `docs/sources/paper.pdf`, secciones 3 a 5, especialmente 4.1–4.3.
-- Consigna: `docs/sources/assignment.pdf`, apartado
+- Consigna: `docs/sources/enunciado.pdf`, apartado
   “Implementación”.
 - Modelo Java: `src/main/java/org/concurrent/project/RdP.java`.
 - Workers: `src/main/java/org/concurrent/project/Main.java` y `Threads.java`.
@@ -1136,5 +1211,5 @@ evidencia; queda registrada como caso histórico en el `CHANGELOG.md`.
 - P-invariantes: `src/main/java/org/concurrent/project/Invariants.java`.
 - T-invariantes y analizador: `regex/TInvariants.yaml` y
   `regex/InvariantsAnalyzer.py`.
-- Segmentación, temporización y política: `docs/POLITICA_Y_JUSTIFICACION.md`.
+- Segmentación, temporización y política: `POLITICA_Y_JUSTIFICACION.md`.
 - Criterios de aceptación de corridas: `README.md`.

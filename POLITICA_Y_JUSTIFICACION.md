@@ -7,7 +7,7 @@
 > por qué no crear un hilo por transición.
 >
 > **Contexto.** La derivación formal de los seis segmentos desde el paper está
-> en `docs/GUIA_ESTUDIO_PAPER_Y_PROYECTO.md` (§9). Los criterios de aceptación
+> en `GUIA_ESTUDIO_PAPER_Y_PROYECTO.md` (§9). Los criterios de aceptación
 > de corridas están en `README.md`. La configuración vigente está en `README.md`
 > y es fuente de verdad en `Main.java`.
 
@@ -65,14 +65,14 @@ segmento por segmento.
 
 **[PROYECTO]** Fuente: `Monitor.java:20-22`, aplicado con `timed=true`.
 
-| Transición | Alfa (ms) | Beta | Semántica |
-|---|---|---|---|
-| T1 | 100 | ∞ | EFT absoluto desde sensibilización |
-| T4 | 60 | ∞ | idem |
-| T5 | 60 | ∞ | idem |
-| T8 | 80 | ∞ | idem |
-| T9 | 40 | ∞ | idem |
-| T10 | 40 | ∞ | idem |
+| Transición | Alfa (ms) | Beta | Semántica                          |
+| ---------- | --------- | ---- | ---------------------------------- |
+| T1         | 100       | ∞    | EFT absoluto desde sensibilización |
+| T4         | 60        | ∞    | idem                               |
+| T5         | 60        | ∞    | idem                               |
+| T8         | 80        | ∞    | idem                               |
+| T9         | 40        | ∞    | idem                               |
+| T10        | 40        | ∞    | idem                               |
 
 Todas las demás transiciones (T0, T2, T3, T6, T7, T11) no están temporizadas.
 
@@ -84,14 +84,14 @@ Todas las demás transiciones (T0, T2, T3, T6, T7, T11) no están temporizadas.
 
 **[PROYECTO]** Fuente: `Main.java:78-84`.
 
-| Worker | Path | Índices | Segmento | Rol |
-|---|---|---|---|---|
-| Thread-1 | `[T0, T1]` | `[0,1]` | `S_A` | Ingreso del cliente |
-| Thread-2 | `[T2, T5]` | `[2,5]` | `S_B` | Agente superior |
-| Thread-3 | `[T3, T4]` | `[3,4]` | `S_C` | Agente inferior |
-| Thread-4 | `[T6, T9, T10]` | `[6,9,10]` | `S_D` | Confirmación y pago |
-| Thread-5 | `[T7, T8]` | `[7,8]` | `S_E` | Cancelación |
-| Thread-6 | `[T11]` | `[11]` | `S_F` | Retorno a idle |
+| Worker   | Path            | Índices    | Segmento | Rol                 |
+| -------- | --------------- | ---------- | -------- | ------------------- |
+| Thread-1 | `[T0, T1]`      | `[0,1]`    | `S_A`    | Ingreso del cliente |
+| Thread-2 | `[T2, T5]`      | `[2,5]`    | `S_B`    | Agente superior     |
+| Thread-3 | `[T3, T4]`      | `[3,4]`    | `S_C`    | Agente inferior     |
+| Thread-4 | `[T6, T9, T10]` | `[6,9,10]` | `S_D`    | Confirmación y pago |
+| Thread-5 | `[T7, T8]`      | `[7,8]`    | `S_E`    | Cancelación         |
+| Thread-6 | `[T11]`         | `[11]`     | `S_F`    | Retorno a idle      |
 
 ---
 
@@ -105,10 +105,10 @@ la cantidad de hilos.
 
 ### 3.1 `S_A = [T0, T1]` — Ingreso
 
-| Transición | Pre | Post | Timed |
-|---|---|---|---|
-| T0 | P0, P1, P4 | P2 | no |
-| T1 | P2 | P1, P3 | **T1 alfa=100 ms** |
+| Transición | Pre        | Post   | Timed              |
+| ---------- | ---------- | ------ | ------------------ |
+| T0         | P0, P1, P4 | P2     | no                 |
+| T1         | P2         | P1, P3 | **T1 alfa=100 ms** |
 
 - Invariante: `P1 + P2 = 1` → un único cliente en tránsito (P2) a la vez.
 - Durante la espera de T1, `P2=1` retiene P1; ningún otro cliente puede ingresar
@@ -118,8 +118,8 @@ la cantidad de hilos.
 - **Conclusión:** separar T0/T1 no aporta progreso adicional; el cuello es P1.
 
 **Argumento semántico/conceptual.** T0 y T1 representan el mismo cliente
-cruzando una frontera natural del sistema: *ingresó a la agencia* (T0) y *queda
-en espera de atención* (T1). Operan como una **inversión producción-consumo**
+cruzando una frontera natural del sistema: _ingresó a la agencia_ (T0) y _queda
+en espera de atención_ (T1). Operan como una **inversión producción-consumo**
 sobre el recurso P1: T0 toma los recursos del ambiente (P0, P1, P4) y T1
 devuelve P1 y deposita al cliente en P3. Entre ambos no hay un punto de decisión
 ni una frontera de responsabilidad; separar la transición en dos hilos carece de
@@ -140,10 +140,10 @@ sumaría contención del mutex sin cambiar el marcado posible ni la capacidad.
 
 ### 3.2 `S_B = [T2, T5]` — Agente superior
 
-| Transición | Pre | Post | Timed |
-|---|---|---|---|
-| T2 | P3, P6 | P4, P5 | no |
-| T5 | P5 | P6, P9 | **T5 alfa=60 ms** |
+| Transición | Pre    | Post   | Timed             |
+| ---------- | ------ | ------ | ----------------- |
+| T2         | P3, P6 | P4, P5 | no                |
+| T5         | P5     | P6, P9 | **T5 alfa=60 ms** |
 
 - Invariante: `P5 + P6 = 1` → agente unitario; un solo cliente en la rama.
 - Durante la espera de T5, `P6=0`; el hilo (único o separado) queda bloqueado al
@@ -154,21 +154,21 @@ sumaría contención del mutex sin cambiar el marcado posible ni la capacidad.
 
 ### 3.3 `S_C = [T3, T4]` — Agente inferior
 
-| Transición | Pre | Post | Timed |
-|---|---|---|---|
-| T3 | P3, P7 | P4, P8 | no |
-| T4 | P8 | P7, P9 | **T4 alfa=60 ms** |
+| Transición | Pre    | Post   | Timed             |
+| ---------- | ------ | ------ | ----------------- |
+| T3         | P3, P7 | P4, P8 | no                |
+| T4         | P8     | P7, P9 | **T4 alfa=60 ms** |
 
 - Invariante: `P7 + P8 = 1`. Análogo exacto de `S_B` con P7/P8.
 - **Conclusión:** separar T3/T4 no agrega paralelismo.
 
 ### 3.4 `S_D = [T6, T9, T10]` — Confirmación y pago
 
-| Transición | Pre | Post | Timed |
-|---|---|---|---|
-| T6 | P9, P10 | P11 | no |
-| T9 | P11 | P13 | **T9 alfa=40 ms** |
-| T10 | P13 | P10, P14 | **T10 alfa=40 ms** |
+| Transición | Pre     | Post     | Timed              |
+| ---------- | ------- | -------- | ------------------ |
+| T6         | P9, P10 | P11      | no                 |
+| T9         | P11     | P13      | **T9 alfa=40 ms**  |
+| T10        | P13     | P10, P14 | **T10 alfa=40 ms** |
 
 - Invariante: `P10 + P11 + P12 + P13 = 1` → un solo cliente en toda la zona de
   decisión/pago.
@@ -178,10 +178,10 @@ sumaría contención del mutex sin cambiar el marcado posible ni la capacidad.
 
 ### 3.5 `S_E = [T7, T8]` — Cancelación
 
-| Transición | Pre | Post | Timed |
-|---|---|---|---|
-| T7 | P9, P10 | P12 | no |
-| T8 | P12 | P10, P14 | **T8 alfa=80 ms** |
+| Transición | Pre     | Post     | Timed             |
+| ---------- | ------- | -------- | ----------------- |
+| T7         | P9, P10 | P12      | no                |
+| T8         | P12     | P10, P14 | **T8 alfa=80 ms** |
 
 - Invariante: `P10 + P11 + P12 + P13 = 1` → `P12` ya es de capacidad 1 **por la
   red**, no por el número de workers.
@@ -192,8 +192,8 @@ sumaría contención del mutex sin cambiar el marcado posible ni la capacidad.
 ### 3.6 `S_F = [T11]` — Retorno
 
 | Transición | Pre | Post | Timed |
-|---|---|---|---|
-| T11 | P14 | P0 | no |
+| ---------- | --- | ---- | ----- |
+| T11        | P14 | P0   | no    |
 
 - `P14` puede acumular hasta 5 tokens (ver guía §9.3), pero T11 no está
   temporizada: cada disparo es inmediato. Un único worker consume P14 en serie;
@@ -210,11 +210,11 @@ sumaría contención del mutex sin cambiar el marcado posible ni la capacidad.
 > token**. El timing es relevante para observabilidad y determinismo del
 > interleaving, pero **no habilita paralelismo topológico adicional**.
 
-| Timing | Efecto real |
-|---|---|
-| `TOO_EARLY` en un worker único | El worker duerme; nadie más puede avanzar en ese punto (recurso ocupado). |
-| `TOO_EARLY` con hilos separados | El hilo "aguas arriba" se bloquea igualmente en `waitForSensitization` por el mismo recurso. |
-| Resultado | **Mismo marcado posible, misma capacidad, overhead mayor** (más threads, más contención en `entry`, más handoffs). |
+| Timing                          | Efecto real                                                                                                        |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `TOO_EARLY` en un worker único  | El worker duerme; nadie más puede avanzar en ese punto (recurso ocupado).                                          |
+| `TOO_EARLY` con hilos separados | El hilo "aguas arriba" se bloquea igualmente en `waitForSensitization` por el mismo recurso.                       |
+| Resultado                       | **Mismo marcado posible, misma capacidad, overhead mayor** (más threads, más contención en `entry`, más handoffs). |
 
 ---
 
@@ -240,10 +240,10 @@ distribución observada.
 **[PROYECTO]** El monitor tiene dos mecanismos de bloqueo distintos y es
 **crítico** distinguirlos:
 
-| Mecanismo | Método | ¿Se registra como waiter en `Queues`? | ¿La política lo ve? |
-|---|---|---|---|
-| Espera por sensibilización | `Monitor.waitForSensitization()` | **Sí** (`incrementWaitingCount` + `sem.acquire`) | Sí, como candidato en `wakingCandidates()` |
-| Espera temporal (alfa) | `Monitor.waitUntilEarliestFireTime()` → `TimeRestrictions.awaitUntilEarliestFireTime()` | **No** (`Thread.sleep` puro) | **No** |
+| Mecanismo                  | Método                                                                                  | ¿Se registra como waiter en `Queues`?            | ¿La política lo ve?                        |
+| -------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------ |
+| Espera por sensibilización | `Monitor.waitForSensitization()`                                                        | **Sí** (`incrementWaitingCount` + `sem.acquire`) | Sí, como candidato en `wakingCandidates()` |
+| Espera temporal (alfa)     | `Monitor.waitUntilEarliestFireTime()` → `TimeRestrictions.awaitUntilEarliestFireTime()` | **No** (`Thread.sleep` puro)                     | **No**                                     |
 
 ```java
 // waitForSensitization: registra waiter → visible para Policy
@@ -267,9 +267,9 @@ time.awaitUntilEarliestFireTime(transition);  // Thread.sleep(restante)
 **[INFERENCIA]** La diferencia no está en el throughput (la topología no cambia),
 sino en **dónde queda dormido cada hilo**:
 
-| Configuración | Hilo de T5 duerme en | Clientes de T2 que llegan mientras tanto |
-|---|---|---|
-| Un worker `[T2,T5]` | `Thread.sleep` (invisible) | Ninguno puede disparar T2 (P6=0), y el único hilo disponible es el mismo que duerme → **se quedan sin hilo que los ponga en cola** |
+| Configuración                   | Hilo de T5 duerme en       | Clientes de T2 que llegan mientras tanto                                                                                            |
+| ------------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Un worker `[T2,T5]`             | `Thread.sleep` (invisible) | Ninguno puede disparar T2 (P6=0), y el único hilo disponible es el mismo que duerme → **se quedan sin hilo que los ponga en cola**  |
 | Hilos separados `[T2]` y `[T5]` | `Thread.sleep` (invisible) | El **hilo de T2** intenta el nuevo cliente, falla por P6=0 y entra en `waitForSensitization(T2)` → **queda registrado como waiter** |
 
 El punto clave: en la configuración separada, **los clientes que no pueden
@@ -360,7 +360,7 @@ distribución observada.
 
 **Requiere** (las tres simultáneas):
 
-1. Que exista un cliente *aguas arriba* esperando (P3 para T2/T3, P9 para T6/T7).
+1. Que exista un cliente _aguas arriba_ esperando (P3 para T2/T3, P9 para T6/T7).
 2. Que el recurso acotante esté retenido por el otro ramal (P6=0, P7=0, P10=0).
 3. Que el hilo temporizado duerma (TOO_EARLY) liberando el monitor, sin
    registrarse en la cola de la transición temporizada.
@@ -401,14 +401,14 @@ Argumentos transversales que aplican a todos los segmentos:
 
 ## 6. Tabla maestra consolidada
 
-| Segmento | Criterio paper | Capacidad máxima | Timed | Par de conflicto | ¿Separar aporta? | Justificación de NO separar |
-|---|---|---|---|---|---|---|
-| `S_A [T0,T1]` | Caso 1 (lineal) | 1 (`P1+P2`) | T1 100 ms | No | No | paper + par atómico + sin conflicto |
-| `S_B [T2,T5]` | Caso 2 (rama fork) | 1 (`P5+P6`) | T5 60 ms | T2/T3 (AGENTS) | Marginal (exposición) | topología; beneficio < costo |
-| `S_C [T3,T4]` | Caso 2 (rama fork) | 1 (`P7+P8`) | T4 60 ms | T2/T3 (AGENTS) | Marginal (exposición) | topología; beneficio < costo |
-| `S_D [T6,T9,T10]` | Caso 2 (rama fork) | 1 (`P10+..+P13`) | T9 40, T10 40 ms | T6/T7 (RESERV.) | Marginal (exposición) | cuello es P10, no hilos |
-| `S_E [T7,T8]` | Caso 2 (rama fork) | 1 (`P12`) | T8 80 ms | T6/T7 (RESERV.) | Marginal (exposición) | P12 capacidad 1 por red |
-| `S_F [T11]` | Caso 3 (convergencia) | 5 (`P14`) | No | No | No | responsabilidad común + sin alfa |
+| Segmento          | Criterio paper        | Capacidad máxima | Timed            | Par de conflicto | ¿Separar aporta?      | Justificación de NO separar         |
+| ----------------- | --------------------- | ---------------- | ---------------- | ---------------- | --------------------- | ----------------------------------- |
+| `S_A [T0,T1]`     | Caso 1 (lineal)       | 1 (`P1+P2`)      | T1 100 ms        | No               | No                    | paper + par atómico + sin conflicto |
+| `S_B [T2,T5]`     | Caso 2 (rama fork)    | 1 (`P5+P6`)      | T5 60 ms         | T2/T3 (AGENTS)   | Marginal (exposición) | topología; beneficio < costo        |
+| `S_C [T3,T4]`     | Caso 2 (rama fork)    | 1 (`P7+P8`)      | T4 60 ms         | T2/T3 (AGENTS)   | Marginal (exposición) | topología; beneficio < costo        |
+| `S_D [T6,T9,T10]` | Caso 2 (rama fork)    | 1 (`P10+..+P13`) | T9 40, T10 40 ms | T6/T7 (RESERV.)  | Marginal (exposición) | cuello es P10, no hilos             |
+| `S_E [T7,T8]`     | Caso 2 (rama fork)    | 1 (`P12`)        | T8 80 ms         | T6/T7 (RESERV.)  | Marginal (exposición) | P12 capacidad 1 por red             |
+| `S_F [T11]`       | Caso 3 (convergencia) | 5 (`P14`)        | No               | No               | No                    | responsabilidad común + sin alfa    |
 
 ---
 
@@ -435,18 +435,18 @@ Argumentos transversales que aplican a todos los segmentos:
 
 ## 8. Qué cambia y qué NO cambia
 
-| Dimensión | Con hilos separados |
-|---|---|
-| Topología / P-invariantes | NO cambia |
-| Capacidad de plazas | NO cambia |
-| Throughput máximo | NO cambia (sigue limitado por P10, P5+P6, P7+P8) |
-| **Número de oportunidades de `choose()` con pares completos** | **Aumenta** (efecto principal) |
-| **Incidencia de la política en la distribución** | **Aumenta** (más decisiones con ambas ramas presentes) |
-| Contención del mutex / overhead de scheduling | Aumenta (costo) |
+| Dimensión                                                     | Con hilos separados                                    |
+| ------------------------------------------------------------- | ------------------------------------------------------ |
+| Topología / P-invariantes                                     | NO cambia                                              |
+| Capacidad de plazas                                           | NO cambia                                              |
+| Throughput máximo                                             | NO cambia (sigue limitado por P10, P5+P6, P7+P8)       |
+| **Número de oportunidades de `choose()` con pares completos** | **Aumenta** (efecto principal)                         |
+| **Incidencia de la política en la distribución**              | **Aumenta** (más decisiones con ambas ramas presentes) |
+| Contención del mutex / overhead de scheduling                 | Aumenta (costo)                                        |
 
 **[INFERENCIA]** La separación es un **intercambio**: se paga contención
 incrementada del monitor a cambio de más exposición de la política. Es una
-decisión de *observabilidad/alineación con la consigna*, no de rendimiento.
+decisión de _observabilidad/alineación con la consigna_, no de rendimiento.
 
 ---
 
@@ -455,10 +455,10 @@ decisión de *observabilidad/alineación con la consigna*, no de rendimiento.
 Para verificar empíricamente, comparar dos configuraciones con la misma
 `timed=true`, mismos alfas y mismo `M0`:
 
-| Configuración | Workers |
-|---|---|
-| A (vigente) | `[T0,T1]`, `[T2,T5]`, `[T3,T4]`, `[T6,T9,T10]`, `[T7,T8]`, `[T11]` |
-| B (separada) | `[T0,T1]`, `[T2]`, `[T5]`, `[T3]`, `[T4]`, `[T6]`, `[T9]`, `[T10]`, `[T7]`, `[T8]`, `[T11]` |
+| Configuración | Workers                                                                                     |
+| ------------- | ------------------------------------------------------------------------------------------- |
+| A (vigente)   | `[T0,T1]`, `[T2,T5]`, `[T3,T4]`, `[T6,T9,T10]`, `[T7,T8]`, `[T11]`                          |
+| B (separada)  | `[T0,T1]`, `[T2]`, `[T5]`, `[T3]`, `[T4]`, `[T6]`, `[T9]`, `[T10]`, `[T7]`, `[T8]`, `[T11]` |
 
 Métricas a comparar (según los criterios del `README.md`):
 
@@ -482,7 +482,7 @@ La justificación actual depende de:
 
 - **Modelo**: si se modificaran las capacidades (p. ej. `P10=2`, `P6=2`,
   `P1=2`), la segmentación debería recalcularse con el algoritmo del paper (ver
-  `docs/GUIA_ESTUDIO_PAPER_Y_PROYECTO.md` §9) y el análisis de capacidad (que
+  `GUIA_ESTUDIO_PAPER_Y_PROYECTO.md` §9) y el análisis de capacidad (que
   aquí se resume en §3) quedaría obsoleto.
 - **Alphas**: si una transición tuviera alfa mucho mayor, la exposición de
   política de separar podría valer la pena; habría que medirlo con el
@@ -503,6 +503,6 @@ La justificación actual depende de:
   `Policy.java` (`choose`, `activeConflictIn`, `selectByPercentage`).
 - P-invariantes: `src/main/java/org/concurrent/project/Invariants.java`.
 - Derivación de segmentos y capacidades (algoritmo 4.1–4.3):
-  `docs/GUIA_ESTUDIO_PAPER_Y_PROYECTO.md`.
+  `GUIA_ESTUDIO_PAPER_Y_PROYECTO.md`.
 - Criterios de aceptación de corridas: `README.md`.
 - Comandos: `scripts/run.sh` + `regex/InvariantsAnalyzer.py` (186 invariantes).
