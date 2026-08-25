@@ -96,16 +96,13 @@ public class TimeRestrictions {
      * matriz de sensibilización y, para la transición recién disparada, reinicia
      * la ventana de tiempo si permanece sensibilizada.
      *
-     * @param sensitized    matriz 1xN de transiciones sensibilizadas.
+     * @param sensitized      matriz 1xN de transiciones sensibilizadas.
      * @param firedTransition transición que acaba de dispararse.
      */
     public void refreshTimedState(DMatrixRMaj sensitized, int firedTransition) {
         for (int transition : timedTransitions.keySet()) {
             boolean isSensitized = sensitized.get(0, transition) == 1;
-            refreshTransitionState(
-                    transition,
-                    isSensitized,
-                    transition == firedTransition);
+            refreshTransitionState(transition, isSensitized, transition == firedTransition);
         }
     }
 
@@ -117,14 +114,11 @@ public class TimeRestrictions {
      * acaba de dispararse: en ese caso comienza una nueva instancia de
      * habilitación y el reloj se reinicia.
      *
-     * @param transition    número de transición temporizada.
-     * @param isSensitized  {@code true} si está sensibilizada actualmente.
-     * @param wasFired      {@code true} si acaba de dispararse.
+     * @param transition   número de transición temporizada.
+     * @param isSensitized {@code true} si está sensibilizada actualmente.
+     * @param wasFired     {@code true} si acaba de dispararse.
      */
-    private void refreshTransitionState(
-            int transition,
-            boolean isSensitized,
-            boolean wasFired) {
+    private void refreshTransitionState(int transition, boolean isSensitized, boolean wasFired) {
         RuntimeState state = runtimeStates.get(transition);
         boolean startsNewWindow = isSensitized && (wasFired || !state.sensitized);
 
