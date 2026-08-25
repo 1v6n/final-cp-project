@@ -264,7 +264,7 @@ public class Policy {
 
     if (conflictTotal > 0) {
       summary.append("  Resolución Bresenham (objetivo: ")
-          .append(preferredPercentage(ConflictGroup.AGENTS))
+          .append(getPreferredPercentage(ConflictGroup.AGENTS))
           .append("%):")
           .append(System.lineSeparator())
           .append("    T2 elegida: ")
@@ -302,7 +302,7 @@ public class Policy {
 
     if (conflictTotal > 0) {
       summary.append("  Resolución Bresenham (objetivo: ")
-          .append(preferredPercentage(ConflictGroup.RESERVATIONS))
+          .append(getPreferredPercentage(ConflictGroup.RESERVATIONS))
           .append("%):")
           .append(System.lineSeparator())
           .append("    T6 elegida: ")

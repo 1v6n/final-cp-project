@@ -14,10 +14,6 @@ package "Aplicación" {
     +run(): void
   }
 
-  interface AutoCloseable <<interface>> {
-    +close(): void
-  }
-
   class Main {
     -{static} TOTAL_RUNS : int
     -{static} POLICY_MODE : PolicyMode
@@ -48,20 +44,6 @@ package "Aplicación" {
 
     +Threads(path: List<Integer>, monitor: MonitorInterface, ...)
     +run() : void
-  }
-
-  class ProgressBar implements AutoCloseable {
-    -total : int
-    -completed : AtomicInteger
-    -barWidth : int
-    -out : PrintStream
-    -lastPercent : int
-    -completed_printed : boolean
-
-    +ProgressBar(total : int, completed : AtomicInteger, barWidth : int)
-    +synchronized update() : void
-    -render(current : int, percent : int) : void
-    +close() : void
   }
 }
 
@@ -193,7 +175,6 @@ package "Política" {
     -selectByPercentage(group : ConflictGroup) : int
     -getAccumulatedResidue(group : ConflictGroup) : int
     -getPreferredPercentage(group : ConflictGroup) : int
-    -preferredPercentage(ConflictGroup group) : int
     -recordConflictDecision(selected : int) : void
     -recordRealFire(transition: int) : void
     +printSummary() : void
@@ -217,10 +198,10 @@ package "Política" {
 
 package "Observabilidad" {
   interface AutoCloseable <<interface>> {
-    +close() : void
+  +close(): void
   }
-  
-  class Invariants {
+
+  class Invariants <<utility>> {
     +{static} defaultPInvariants() : List<PInvariant>
     +{static} checkPInvariants(marking : DMatrixRMaj, invariants : List<PInvariant>) : List<PInvariantResult>
 
@@ -247,6 +228,20 @@ package "Observabilidad" {
     -formatMarking(m : int[]) : String
     +synchronized close() : void
   }
+
+  class ProgressBar implements AutoCloseable {
+    -total : int
+    -completed : AtomicInteger
+    -barWidth : int
+    -out : PrintStream
+    -lastPercent : int
+    -completed_printed : boolean
+
+    +ProgressBar(total : int, completed : AtomicInteger, barWidth : int)
+    +synchronized update() : void
+    -render(current : int, percent : int) : void
+    +close() : void
+  }
 }
 
 Threads --> MonitorInterface
@@ -271,7 +266,7 @@ Monitor ..> Invariants
 TimeRestrictions *-- TimingConfig
 TimeRestrictions *-- RuntimeState
 Policy --> PolicyMode
-Policy --> ConflictGroup
+Policy ..> ConflictGroup
 Invariants +-- PInvariant
 Invariants +-- PInvariantResult
 
