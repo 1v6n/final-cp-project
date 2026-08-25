@@ -1,124 +1,135 @@
 @startuml
-title Diagrama de clases - Sistema Agencia de Viajes
+title Diagrama de clases — Simulación concurrente de Red de Petri
 
-skinparam classAttributeIconSize 0
+left to right direction
+
 skinparam shadowing false
 skinparam linetype ortho
 skinparam packageStyle rectangle
-skinparam nodesep 45
-skinparam ranksep 35
+skinparam classAttributeIconSize 0
+skinparam nodesep 35
+skinparam ranksep 30
 hide empty members
 
-package "Aplicacion" {
+skinparam class {
+  BackgroundColor #FFFFFF
+  BorderColor #495057
+  ArrowColor #495057
+  FontColor #212529
+}
+
+skinparam package {
+  BorderColor #495057
+  FontColor #212529
+}
+
+package "Aplicación" #E7F1FF {
   class Main {
-    -{static} TOTAL_RUNS: int
-    -{static} timed: boolean
-    -{static} POLICY_MODE: PolicyMode
-    +{static} main(args: String[]): void
-    -{static} createWorkers(...): Thread[]
-    -{static} startThreads(workers: Thread[]): void
-    -{static} awaitCompletion(...): void
-    -{static} stopThreads(...): void
-    -{static} joinThreads(workers: Thread[]): void
-    -{static} printSummary(...): void
+    -{static} TOTAL_RUNS : int
+    -{static} POLICY_MODE : PolicyMode
+
+    +{static} main(args : String[]) : void
+    -{static} createWorkers(...) : Thread[]
   }
 
   class "Main::WorkerSpec" as WorkerSpec <<record>> {
-    -name: String
-    -path: List<Integer>
-    -countsCompletion: boolean
+    -name : String
+    -path : List<Integer>
+    -countsCompletion : boolean
   }
 
   class Threads <<Runnable>> {
-    -path: List<Integer>
-    -totalInvariants: int
-    -monitor: MonitorInterface
-    -completedInvariants: AtomicInteger
-    -startedInvariants: AtomicInteger
-    -countsCompletion: boolean
-    -running: AtomicBoolean
-    +Threads(path: List<Integer>, monitor: MonitorInterface, ...)
-    +run(): void
+    -path : List<Integer>
+    -monitor : MonitorInterface
+    -completedInvariants : AtomicInteger
+    -countsCompletion : boolean
+    -running : AtomicBoolean
+
+    +run() : void
   }
 
-  class ProgressBar <<AutoCloseable>> {
-    -total: int
-    -completed: AtomicInteger
-    -barWidth: int
-    -out: PrintStream
-    -lastPercent: int
-    -completed_printed: boolean
-    +ProgressBar(total: int, completed: AtomicInteger, barWidth: int)
-    +update(): void
-    -render(current: int, percent: int): void
-    +close(): void
+  class ProgressBar <<presentation>> {
+    -total : int
+    -completed : AtomicInteger
+    +update() : void
+    +close() : void
   }
 }
 
-package "Monitor concurrente" {
+package "Monitor concurrente" #FFF3CD {
   interface MonitorInterface {
-    +fireTransition(transition: int): boolean
+    +fireTransition(transition : int) : boolean
   }
 
   class Monitor {
-    -{static} TIMED_TRANSITIONS_BASE_MS: int[][]
-    -entry: Semaphore
-    -queues: Queues
-    -rdp: RdP
-    -policy: Policy
-    -time: TimeRestrictions
-    -log: LogService
-    -pInvariants: List<PInvariant>
-    ~Monitor(rdp: RdP, timed: boolean, log: LogService, policy: Policy)
-    +fireTransition(transition: int): boolean
-    -handleSensitizedTransition(transition: int, ownership: Ownership): boolean
-    -shouldDeferToPolicySelectedReservation(transition: int): boolean
-    -fireAndReleaseTransition(transition: int, ownership: Ownership): void
-    -selectWaiterOrRelease(ownership: Ownership): void
-    -wakingCandidates(): List<Integer>
-    -waitForSensitization(transition: int, ownership: Ownership): void
+    -entry : Semaphore
+    -queues : Queues
+    -rdp : RdP
+    -policy : Policy
+    -time : TimeRestrictions
+    -log : LogService
+
+    ~Monitor(rdp : RdP, log : LogService, policy : Policy)
+    +fireTransition(transition : int) : boolean
+    -waitForSensitization(...)
+    -fireAndReleaseTransition(...)
+    -wakingCandidates() : List<Integer>
+    -selectWaiterOrRelease(...)
   }
 
-  class "Monitor::Ownership" as Ownership {
-    -owned: boolean
-    +acquire(): void
-    +release(): void
-    +handoff(): void
-    +wakeFromQueue(): void
-    +isOwned(): boolean
+  class "Monitor::Ownership" as Ownership <<inner>> {
+    -owned : boolean
+
+    +acquire() : void
+    +release() : void
+    +handoff() : void
+    +wakeFromQueue() : void
   }
 
-  class "Monitor::Queues" as Queues {
-    -queuesList: List<Semaphore>
-    -numQueues: int
-    -waitingCount: DMatrixRMaj
-    ~Queues(numQueues: int)
-    -getSemaphoreForTransition(transition: int): Semaphore
-    -getWaitingCounts(): DMatrixRMaj
-    -incrementWaitingCount(transition: int): void
-    -decrementWaitingCount(transition: int): void
+  class "Monitor::Queues" as Queues <<inner>> {
+    -waitingCount : DMatrixRMaj
+
+    -incrementWaitingCount(transition : int) : void
+    -hasWaiters(transition : int) : boolean
+    -signalOne(transition : int) : void
+  }
+}
+
+package "Modelo de Red de Petri" #E8F5E9 {
+  class RdP {
+    -MarcadoActual : DMatrixRMaj
+    -Incidencia : DMatrixRMaj
+    -Sensibilizadas : DMatrixRMaj
+
+    +fireTransition(firingVector : DMatrixRMaj) : void
+    +isSensitized(transition : int) : boolean
+    -transicionesSensibilizadas() : void
   }
 
+  class TimeRestrictions {
+    +{static} INFINITE_BETA : long
+    -timedTransitions : Map<Integer, TimingConfig>
+    -runtimeStates : Map<Integer, RuntimeState>
+    -clockNs : LongSupplier
+
+    +refreshTimedState(...)
+    -refreshTransitionState(...)
+    +canFire(transition : int) : boolean
+    +getRemainingToEFT(transition : int) : long
+    ~awaitUntilEFT(transition : int) : void
+  }
+}
+
+package "Política" #F3E5F5 {
   class Policy {
-    -mode: PolicyMode
-    -forcedAgentTransition: int
-    -forcedReservationTransition: int
-    -agentSuperiorCount: int
-    -agentInferiorCount: int
-    -confirmedReservations: int
-    -cancelledReservations: int
-    -conflictAgentSuperior: int
-    -conflictAgentInferior: int
-    -conflictConfirmed: int
-    -conflictCancelled: int
-    -agentCycle: int
-    -reservationCycle: int
-    +Policy(mode: PolicyMode)
-    +isEnabled(): boolean
-    +choose(candidates: List<Integer>): int
-    +selectAny(candidates: List<Integer>): int
-    +onTransitionFired(transition: int): void
-    +printSummary(): void
+    -mode : PolicyMode
+    -agentResidue : int
+    -reservationResidue : int
+
+    +choose(candidates : List<Integer>) : int
+    +recordFire(transition : int) : void
+    -selectByPercentage(group : ConflictGroup) : int
+    +printSummary() : void
   }
 
   enum "Policy::PolicyMode" as PolicyMode {
@@ -126,117 +137,89 @@ package "Monitor concurrente" {
     BALANCED
     PRIORITIZED
   }
+
+  enum "Policy::ConflictGroup" as ConflictGroup {
+    AGENTS
+    RESERVATIONS
+    NONE
+  }
 }
 
-package "Red de Petri" {
-  class RdP {
-    -Incidencia: DMatrixRMaj
-    -IncidenciaEntradaTraspuesta: DMatrixRMaj
-    -MarcadoActual: DMatrixRMaj
-    -Sensibilizadas: DMatrixRMaj
-    -M0: double[]
-    -MatrixIncidencia: double[][]
-    -MatrixIncidenciaEntradaTraspuesta: double[][]
-    +RdP()
-    +fireTransition(firingVector: DMatrixRMaj): void
-    -transicionesSensibilizadas(): void
-    +getMarcadoActual(): DMatrixRMaj
-    +getIncidencia(): DMatrixRMaj
-    +getSensitized(): DMatrixRMaj
-  }
-
-  class TimeRestrictions {
-    +{static} INFINITE_BETA: long
-    -timedTransitions: Map<Integer, TimingConfig>
-    -runtimeStates: Map<Integer, RuntimeState>
-    -clockNs: LongSupplier
-    +TimeRestrictions(timed: boolean, timedTransitionsConfig: int[][])
-    ~TimeRestrictions(clockNs: LongSupplier)
-    +setTimedTransition(transition: int, alphaMs: long, betaMs: long): void
-    +isTimedTransition(transition: int): boolean
-    +updateSensitizationState(transition: int, isSensitized: boolean): void
-    +updateFromSensitized(sensitized: DMatrixRMaj): void
-    +evaluateFire(transition: int): FireEvaluation
-    +getRemainingToEarliest(transition: int): long
-    +onTransitionFired(transition: int, isStillSensitized: boolean): void
-  }
-
-  enum "TimeRestrictions::FireEvaluation" as FireEvaluation {
-    ALLOWED
-    TOO_EARLY
-    NOT_ENABLED
-  }
-
-  class "TimeRestrictions::TimingConfig" as TimingConfig {
-    -alphaNs: long
-    -betaNs: long
-  }
-
-  class "TimeRestrictions::RuntimeState" as RuntimeState {
-    -sensitized: boolean
-    -enabledAtNs: long
-  }
-
+package "Observabilidad" #F1F3F5 {
   class Invariants <<utility>> {
-    -Invariants()
-    +{static} defaultPInvariants(): List<PInvariant>
-    +{static} checkPInvariants(marking: DMatrixRMaj, invariants: List<PInvariant>): List<PInvariantResult>
+    +{static} defaultPInvariants() : List<PInvariant>
+    +{static} checkPInvariants(...) : List<PInvariantResult>
   }
 
   class "Invariants::PInvariant" as PInvariant {
-    +name: String
-    +places: int[]
-    +expected: int
-    +PInvariant(name: String, places: int[], expected: int)
+    +name : String
+    +places : int[]
+    +expected : int
   }
 
-  class "Invariants::PInvariantResult" as PInvariantResult <<record>> {
-    +name: String
-    +ok: boolean
-    +got: int
-    +expected: int
-  }
-}
+  class "Invariants::PInvariantResult" as PInvariantResult <<record>>
 
-package "Infraestructura" {
   class LogService <<AutoCloseable>> {
-    -writer: BufferedWriter
-    -tsFmt: DateTimeFormatter
-    +LogService(logPath: Path)
-    +logFire(threadName: String, transition: int, ok: boolean, marking: int[], pinv: String): void
-    +logEvent(threadName: String, event: String): void
-    -writeLine(line: String): void
-    -formatMarking(marking: int[]): String
-    +close(): void
+    +logFire(...)
+    +logEvent(...)
+    +close() : void
   }
 }
 
-MonitorInterface <|.. Monitor
-Threads --> MonitorInterface
-
+' Relaciones de la aplicación
 Main +-- WorkerSpec
-Main ..> Threads
-Main ..> ProgressBar
-Main ..> Monitor
+Main ..> Threads : crea
+Main ..> ProgressBar : muestra
+Main ..> Monitor : configura
 Main ..> RdP
 Main ..> Policy
 Main ..> LogService
 
-Monitor --> RdP
-Monitor --> Policy
+' Relaciones del monitor
+MonitorInterface <|.. Monitor
+Threads --> MonitorInterface : solicita disparos
+Monitor --> RdP : consulta y dispara
+Monitor --> Policy : selecciona waiter
 Monitor *-- TimeRestrictions
 Monitor *-- Queues
 Monitor *-- Ownership
-Monitor --> LogService
-Monitor --> PInvariant
-Monitor ..> Invariants
+Monitor --> LogService : registra
+Monitor ..> Invariants : verifica
 
+' Relaciones de política y observabilidad
 Policy --> PolicyMode
-TimeRestrictions --> FireEvaluation
-TimeRestrictions *-- TimingConfig
-TimeRestrictions *-- RuntimeState
-
+Policy ..> ConflictGroup
 Invariants +-- PInvariant
 Invariants +-- PInvariantResult
+
+' Guías de layout: no agregan dependencia conceptual.
+Main -[hidden]right-> Monitor
+Monitor -[hidden]right-> RdP
+RdP -[hidden]right-> Invariants
+Policy -[hidden]down-> LogService
+
+note right of Monitor
+  Signal and Exit:
+  sin candidatos, libera entry;
+  con candidatos, despierta un waiter
+  y transfiere ownership mediante handoff.
+end note
+
+note right of Policy
+  NONE: selección aleatoria.
+  BALANCED: 50/50.
+  PRIORITIZED: T2=75%, T6=80%.
+
+  La proporción se aplica sólo
+  sobre conflictos reales.
+end note
+
+note right of TimeRestrictions
+  alpha comienza al sensibilizarse.
+  Una habilitación persistente conserva
+  su reloj; un disparo reinicia su nueva
+  instancia temporal.
+  La configuración vigente usa beta infinito.
+end note
 
 @enduml
