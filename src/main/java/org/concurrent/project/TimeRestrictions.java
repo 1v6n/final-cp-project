@@ -92,29 +92,6 @@ public class TimeRestrictions {
     }
 
     /**
-     * Refresca estado temporal de una transición según su sensibilización actual.
-     *
-     * @param transition   número de transición.
-     * @param isSensitized {@code true} si la transición está sensibilizada.
-     */
-    public void updateSensitizationState(int transition, boolean isSensitized) {
-        if (!isTimedTransition(transition)) {
-            return;
-        }
-
-        RuntimeState state = runtimeStates.get(transition);
-        if (isSensitized && !state.sensitized) {
-            state.sensitized = true;
-            state.enabledAtNs = clockNs.getAsLong();
-            return;
-        }
-
-        if (!isSensitized && state.sensitized) {
-            state.sensitized = false;
-        }
-    }
-
-    /**
      * Refresca estado temporal de todas las transiciones temporizadas desde la
      * matriz de sensibilización y, para la transición recién disparada, reinicia
      * la ventana de tiempo si permanece sensibilizada.
@@ -123,22 +100,37 @@ public class TimeRestrictions {
      * @param firedTransition transición que acaba de dispararse.
      */
     public void refreshTimedState(DMatrixRMaj sensitized, int firedTransition) {
-        for (Map.Entry<Integer, TimingConfig> entry : timedTransitions.entrySet()) {
-            int transition = entry.getKey();
+        for (int transition : timedTransitions.keySet()) {
             boolean isSensitized = sensitized.get(0, transition) == 1;
+            refreshTransitionState(
+                    transition,
+                    isSensitized,
+                    transition == firedTransition);
+        }
+    }
 
-            if (transition == firedTransition) {
-                RuntimeState state = runtimeStates.get(transition);
+    /**
+     * Actualiza el estado temporal de una transición temporizada.
+     * <p>
+     * Una nueva sensibilización inicia una ventana temporal. Si la transición
+     * continúa sensibilizada, conserva la ventana existente, excepto cuando
+     * acaba de dispararse: en ese caso comienza una nueva instancia de
+     * habilitación y el reloj se reinicia.
+     *
+     * @param transition    número de transición temporizada.
+     * @param isSensitized  {@code true} si está sensibilizada actualmente.
+     * @param wasFired      {@code true} si acaba de dispararse.
+     */
+    private void refreshTransitionState(
+            int transition,
+            boolean isSensitized,
+            boolean wasFired) {
+        RuntimeState state = runtimeStates.get(transition);
+        boolean startsNewWindow = isSensitized && (wasFired || !state.sensitized);
 
-                if (isSensitized) {
-                    state.enabledAtNs = clockNs.getAsLong();
-                    state.sensitized = true;
-                } else {
-                    state.sensitized = false;
-                }
-            } else {
-                updateSensitizationState(transition, isSensitized);
-            }
+        state.sensitized = isSensitized;
+        if (startsNewWindow) {
+            state.enabledAtNs = clockNs.getAsLong();
         }
     }
 
