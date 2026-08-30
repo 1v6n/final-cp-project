@@ -74,11 +74,11 @@ public class Monitor implements MonitorInterface {
         // tras una espera temporal debe adquirir entry nuevamente.
         if (!ownership.isOwned()) {
           ownership.acquire();
-        }
 
-        if (!rdp.isSensitized(transition)) {
-          waitForSensitization(transition, ownership);
-          continue;
+          if (!rdp.isSensitized(transition)) {
+            waitForSensitization(transition, ownership);
+            continue;
+          }
         }
 
         if (time.canFire(transition)) {
