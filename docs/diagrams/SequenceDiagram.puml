@@ -26,36 +26,36 @@ loop hasta disparar o ser interrumpido
     activate E
     deactivate E
     O -> O : owned = true
-  end
 
   M -> R : isSensitized(t)
   activate R
   R --> M : boolean
   deactivate R
 
-  opt isSensitized(t) == false
-    group waitForSensitization(t, ownership)
-      M -> Q : incrementWaitingCount(t)
-      activate Q
-      deactivate Q
-      M -> O : release()
-      opt owned == true
-        O -> E : releaseMonitor()
-        activate E
-        deactivate E
-        O -> O : owned = false
+    opt isSensitized(t) == false
+      group waitForSensitization(t, ownership)
+        M -> Q : incrementWaitingCount(t)
+        activate Q
+        deactivate Q
+        M -> O : release()
+        opt owned == true
+          O -> E : releaseMonitor()
+          activate E
+          deactivate E
+          O -> O : owned = false
+        end
+        M -> Q : getSemaphoreForTransition(t).acquire()
+        activate Q
+        Q --> M : signal
+        deactivate Q
+        M -> Q : decrementWaitingCount(t)
+        activate Q
+        deactivate Q
+        M -> O : wakeFromQueue()
+        O -> O : owned = true
       end
-      M -> Q : getSemaphoreForTransition(t).acquire()
-      activate Q
-      Q --> M : signal
-      deactivate Q
-      M -> Q : decrementWaitingCount(t)
-      activate Q
-      deactivate Q
-      M -> O : wakeFromQueue()
-      O -> O : owned = true
+      note right : continue\nvuelve al inicio del loop
     end
-    note right : continue\nvuelve al inicio del loop
   end
 
   M -> T : canFire(t)
