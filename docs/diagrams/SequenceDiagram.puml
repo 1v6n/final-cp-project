@@ -22,15 +22,16 @@ activate O
 loop hasta disparar o ser interrumpido
   opt ownership.isOwned() == false
     M -> O : acquire()
-    O -> E : catchMonitor()
+    O -> M : catchMonitor()
+    M -> E : acquire()
     activate E
     deactivate E
     O -> O : owned = true
 
-  M -> R : isSensitized(t)
-  activate R
-  R --> M : boolean
-  deactivate R
+    M -> R : isSensitized(t)
+    activate R
+    R --> M : boolean
+    deactivate R
 
     opt isSensitized(t) == false
       group waitForSensitization(t, ownership)
@@ -39,22 +40,24 @@ loop hasta disparar o ser interrumpido
         deactivate Q
         M -> O : release()
         opt owned == true
-          O -> E : releaseMonitor()
+          O -> M : releaseMonitor()
+          M -> E : release()
           activate E
           deactivate E
           O -> O : owned = false
         end
         M -> Q : getSemaphoreForTransition(t).acquire()
         activate Q
-        Q --> M : signal
-        deactivate Q
-        M -> Q : decrementWaitingCount(t)
-        activate Q
+        Q --> M : permiso recibido
         deactivate Q
         M -> O : wakeFromQueue()
         O -> O : owned = true
       end
-      note right : continue\nvuelve al inicio del loop
+      note right
+        continue: vuelve al inicio del loop.
+        Como owned == true, omite acquire()
+        e isSensitized() después del handoff.
+      end note
     end
   end
 
@@ -89,7 +92,8 @@ loop hasta disparar o ser interrumpido
         alt no hay candidatos
           M -> O : release()
           opt owned == true
-            O -> E : releaseMonitor()
+            O -> M : releaseMonitor()
+            M -> E : release()
             activate E
             deactivate E
             O -> O : owned = false
@@ -98,12 +102,18 @@ loop hasta disparar o ser interrumpido
         else hay candidatos reales
           M -> P : choose(candidatos)
           activate P
-          note right: si no hay politica o no hay conflicto real\nelige una transicion al azar,\nsino aplica Bresenham y elige la transicion por porcentaje
+          note right
+            Si el modo es NONE o no hay un conflicto real,
+            elige un candidato al azar.
+            Si hay conflicto, aplica Bresenham.
+          end note
           P --> M : selectedTransition
           deactivate P
 
           M -> Q : signalOne(selectedTransition)
           activate Q
+          Q -> Q : decrementWaitingCount(selectedTransition)
+          Q -> Q : getSemaphoreForTransition(selectedTransition).release()
           deactivate Q
           M -> O : handoff()
           O -> O : owned = false
@@ -114,7 +124,8 @@ loop hasta disparar o ser interrumpido
   else canFire(t) == false (TOO_EARLY)
     M -> O : release()
     opt owned == true
-      O -> E : releaseMonitor()
+      O -> M : releaseMonitor()
+      M -> E : release()
       activate E
       deactivate E
       O -> O : owned = false
@@ -133,7 +144,8 @@ end
 
 M -> O : finally: release()
 opt owned == true
-  O -> E : releaseMonitor()
+  O -> M : releaseMonitor()
+  M -> E : release()
   activate E
   deactivate E
   O -> O : owned = false
