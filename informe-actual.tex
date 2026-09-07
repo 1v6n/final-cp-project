@@ -1,0 +1,1059 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish]{babel}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{geometry}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{titlesec}
+\usepackage{parskip} % Espaciado entre párrafos sin sangría
+\usepackage{float}   % Mejor control para posicionar figuras/tablas con [H]
+
+% Configuración de títulos de párrafos
+\titleformat{\paragraph}[hang]
+{\normalfont\normalsize\bfseries}{\theparagraph}{1em}{}
+\titlespacing*{\paragraph}
+{0pt}{3.25ex plus 1ex minus .2ex}{1em}
+
+\geometry{top=3cm, bottom=3cm, left=2.5cm, right=2.5cm}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    filecolor=magenta,      
+    urlcolor=cyan,
+}
+
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\small,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2
+}
+
+\lstset{style=mystyle}
+
+\begin{document}
+
+\begin{titlepage}
+    \centering
+    \vspace*{1cm}
+    {\huge \textbf{UNIVERSIDAD NACIONAL DE CÓRDOBA}} \\
+    \vspace{0.5cm}
+    {\Large Facultad de Ciencias Exactas, Físicas y Naturales} \\
+    \vspace{1cm}
+    \includegraphics[width=0.6\textwidth]{images/unc1_e.jpg} \\
+    \vfill
+    {\Huge \textbf{Trabajo Práctico Final}} \\
+    \vspace{0.5cm}
+    {\Large Red de Petri / Sistema de Agencia de Viajes} \\
+    \vspace{0.5cm}
+    {\large Programación Concurrente} \\
+    \vfill
+    
+    {\large \textbf{Profesores:}} \\
+    VENTRE, LUIS ORLANDO \\
+    LUDEMANN, MAURICIO
+    
+    \vspace{1cm}
+    
+    {\large \textbf{Grupo: \textit{Deadlock Dodgers}}} \\
+    PALACIO, LUIS ENRIQUE (40.609.862) \\
+    SAILLEN, SIMON (42.978.650) \\
+    TRACHTA, AGUSTÍN (43.271.890) \\
+    VARGAS, RODRIGO SEBASTIÁN (42.016.802) \\
+    ZUÑIGA, IVAN (43.552.893)
+    
+    \vfill
+    2024
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+\section{DESARROLLO}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{images/image34.png}
+    \caption{Red de Petri - Sistema de Agencia de Viajes}
+\end{figure}
+
+\textbf{Referencias:}
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{rl}
+        \texttt{P1, P4, P6, P7, P10}& \textbf{Recursos compartidos del sistema} \\
+        \texttt{P0}& \textbf{Buffer de entrada de clientes} \\
+        \texttt{P2}& \textbf{Ingreso a la agencia} \\
+        \texttt{P3}& \textbf{Sala de espera} \\
+        \texttt{P5, P8}& \textbf{Gestión de reservas} \\
+        \texttt{P9}& \textbf{Buffer aceptación/rechazo de reserva} \\
+        \texttt{P12}& \textbf{Cancelación de reserva} \\
+        \texttt{P11}& \textbf{Confirmación de reserva} \\
+        \texttt{P13}& \textbf{Pago de reserva} \\
+        \texttt{P14}& \textbf{Instancia previa al retiro del cliente}
+    \end{tabular}
+\end{table}
+
+\subsection{PROPIEDADES DE LA RED}
+
+\subsubsection{Análisis Teórico}
+
+\paragraph{Seguridad y acotamiento}
+
+Una red es segura si ninguna plaza puede contener más de un token en los
+marcados alcanzables. La red analizada no es segura. Las cotas máximas
+alcanzables son $5$ tokens para $P_0$, $P_3$, $P_4$, $P_9$ y $P_{14}$, y un
+token para cada una de las demás plazas. Por lo tanto, la red es acotada, pero
+no segura.
+
+
+\paragraph{Conservación mediante P-invariantes}
+
+Los P-invariantes expresan sumas de tokens que se mantienen constantes en cada
+disparo. Entre ellos se encuentran
+
+\begin{align*}
+    M(P_1)+M(P_2)&=1, & M(P_5)+M(P_6)&=1,\\
+    M(P_7)+M(P_8)&=1, & M(P_{10})+M(P_{11})+M(P_{12})+M(P_{13})&=1,\\
+    M(P_2)+M(P_3)+M(P_4)&=5,
+\end{align*}
+
+y el invariante global de población
+
+\begin{equation}
+\begin{split}
+    M(P_0)+M(P_2)+M(P_3)+M(P_5)+M(P_8)+M(P_9)\\
+    {}+M(P_{11})+M(P_{12})+M(P_{13})+M(P_{14})=5.
+\end{split}
+\end{equation}
+
+Estos invariantes justifican la conservación de los cinco clientes, de los
+recursos unitarios y de la capacidad de la etapa de ingreso. También permiten
+obtener cotas para las plazas. Por sí solos, no demuestran vivacidad ni
+ausencia de deadlock.
+
+Como los P-invariantes positivos cubren todas las plazas, la red es
+conservadora: existe una suma ponderada de tokens que permanece constante
+durante los disparos.
+
+\paragraph{Vivacidad y ausencia de deadlock}
+
+Estas propiedades deben analizarse sobre los marcados alcanzables y no
+deducirse únicamente de los P-invariantes o de la existencia de ciclos. Para
+el marcado inicial y las reglas estructurales de la red, el análisis de
+alcanzabilidad obtuvo 618 marcados, sin encontrar un marcado muerto. Además,
+desde cada marcado alcanzable es posible regresar al marcado inicial, por lo
+que $M_0$ es un estado hogar y la red es reversible respecto de $M_0$. Como
+desde $M_0$ es posible alcanzar cada transición, desde cualquier marcado todas
+las transiciones pueden volver a habilitarse. Bajo este análisis, la red P/T es
+viva y no presenta deadlocks.
+
+El ciclo $P_{14}\xrightarrow{T_{11}}P_0$ permite recircular los clientes, pero
+no demuestra por sí solo esas propiedades. La conclusión anterior corresponde
+al modelo estructural. La ejecución Java agrega restricciones temporales,
+colas, paths fijos de los workers y una política de handoff, por lo que su
+comportamiento debe verificarse también mediante la ejecución y sus logs.
+
+La red tampoco es persistente. En los conflictos $T_2/T_3$ y $T_6/T_7$, ambas
+transiciones pueden estar sensibilizadas simultáneamente, pero el disparo de
+una puede deshabilitar a la otra al consumir una plaza compartida. Esta
+propiedad explica la necesidad de resolver conflictos durante el handoff.
+
+\subsubsection{Análisis por Software}
+
+\paragraph{Invariantes de Plaza (P-invariantes)}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\textwidth]{images/image32.png}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/image43.png}
+\end{figure}
+
+\paragraph{Ecuaciones de Invariantes de Plaza}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/image33.png}
+\end{figure}
+
+Los P-invariantes mostrados expresan la conservación de clientes y recursos a
+lo largo del proceso. En particular, el invariante global tiene valor $5$ y
+acota la cantidad de clientes distribuidos entre el buffer y las etapas del
+proceso. Esta evidencia permite afirmar conservación y acotamiento, pero no
+permite afirmar por sí sola que la red sea viva o que no tenga deadlocks.
+
+\paragraph{Invariantes de Transición (T-invariantes)}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/image44.png}
+\end{figure}
+
+Los T-invariantes representan secuencias cíclicas cuya ejecución neta conserva
+el marcado. La numeración se alinea con \texttt{regex/TInvariants.yaml}:
+
+\begin{itemize}
+    \item \texttt{inv\_1}: rama superior y confirmación, pago y retorno.
+    \item \texttt{inv\_2}: rama superior y cancelación y retorno.
+    \item \texttt{inv\_3}: rama inferior y confirmación, pago y retorno.
+    \item \texttt{inv\_4}: rama inferior y cancelación y retorno.
+\end{itemize}
+
+La existencia de estas secuencias muestra que el proceso tiene recorridos
+repetibles. No demuestra por sí sola que todos los marcados alcanzables tengan
+una salida, que todos los workers completen un ciclo ni que la ejecución esté
+libre de deadlocks.
+
+\section{IMPLEMENTACIÓN}
+
+\subsection{Tabla de Estados del Sistema}
+
+En una Red de Petri, el estado global del sistema está dado por el marcado
+completo de sus 15 plazas. La siguiente tabla indica qué representa cada plaza
+y el valor que toma en el marcado inicial $M_0$.
+
+\begin{table}[H]
+\centering
+\caption{Estado inicial de cada plaza}
+\small
+\begin{tabularx}{\textwidth}{@{} l X c @{}}
+\toprule
+\textbf{Plaza} & \textbf{Representa} & $\boldsymbol{m_0}$ \\ \midrule
+$P_0$ & Buffer inicial de clientes. & 5 \\
+$P_1$ & Habilita el ingreso mediante $T_0$; $T_1$ lo regenera. & 1 \\
+$P_2$ & Cliente que ingresó a la agencia y espera $T_1$. & 0 \\
+$P_3$ & Sala de espera; punto de decisión entre $T_2$ y $T_3$. & 0 \\
+$P_4$ & Capacidad de la etapa de ingreso; $T_0$ consume un token y $T_2/T_3$ lo regeneran. & 5 \\
+$P_5$ & Cliente en la rama superior, entre $T_2$ y $T_5$. & 0 \\
+$P_6$ & Recurso del agente superior; $T_2$ lo consume y $T_5$ lo regenera. & 1 \\
+$P_7$ & Recurso del agente inferior; $T_3$ lo consume y $T_4$ lo regenera. & 1 \\
+$P_8$ & Cliente en la rama inferior, entre $T_3$ y $T_4$. & 0 \\
+$P_9$ & Cola de decisión de reserva; recibe ambas ramas. & 0 \\
+$P_{10}$ & Recurso compartido de la decisión final; lo regeneran $T_8$ y $T_{10}$. & 1 \\
+$P_{11}$ & Reserva confirmada, pendiente de $T_9$. & 0 \\
+$P_{12}$ & Reserva cancelada, pendiente de $T_8$. & 0 \\
+$P_{13}$ & Pago en proceso, pendiente de $T_{10}$. & 0 \\
+$P_{14}$ & Clientes listos para retornar al buffer mediante $T_{11}$. & 0 \\ \bottomrule
+\end{tabularx}
+\end{table}
+
+El valor de $m_0$ indica la cantidad de tokens de cada plaza en el marcado
+inicial; no equivale a la cantidad de disparos inmediatamente sensibilizados.
+Por ejemplo, $T_2$ requiere tokens en $P_3$ y $P_6$, y $T_3$ en $P_3$ y $P_7$.
+Las plazas de la tabla tampoco representan estados globales mutuamente
+excluyentes, ya que varias pueden contener tokens simultáneamente en un mismo
+marcado.
+
+\subsection{Tabla de Eventos del Sistema}
+
+\begin{table}[H]
+\centering
+\caption{Tabla de Eventos del Sistema}
+\small
+\begin{tabularx}{\textwidth}{@{} c c X @{}}
+\toprule
+\textbf{Evento} & \textbf{Transición} & \textbf{Descripción} \\ \midrule
+$E_0$ & $T_0$ & $P_0+P_1+P_4\rightarrow P_2$: el cliente entra a la agencia y consume el recurso de ingreso y un token de capacidad. \\
+$E_1$ & $T_1$ & $P_2\rightarrow P_1+P_3$: el cliente pasa a la sala de espera y regenera $P_1$. \\
+$E_2$ & $T_2$ & $P_3+P_6\rightarrow P_4+P_5$: inicia la gestión en la rama superior. \\
+$E_3$ & $T_3$ & $P_3+P_7\rightarrow P_4+P_8$: inicia la gestión en la rama inferior. \\
+$E_4$ & $T_4$ & $P_8\rightarrow P_7+P_9$: completa la gestión inferior y regenera $P_7$. \\
+$E_5$ & $T_5$ & $P_5\rightarrow P_6+P_9$: completa la gestión superior y regenera $P_6$. \\
+$E_6$ & $T_6$ & $P_9+P_{10}\rightarrow P_{11}$: confirma la reserva y consume $P_{10}$. \\
+$E_7$ & $T_7$ & $P_9+P_{10}\rightarrow P_{12}$: cancela la reserva y consume $P_{10}$. \\
+$E_8$ & $T_8$ & $P_{12}\rightarrow P_{10}+P_{14}$: completa la cancelación y regenera $P_{10}$. \\
+$E_9$ & $T_9$ & $P_{11}\rightarrow P_{13}$: pasa de reserva confirmada a pago en proceso. \\
+$E_{10}$ & $T_{10}$ & $P_{13}\rightarrow P_{10}+P_{14}$: completa el pago, regenera $P_{10}$ y deja al cliente listo para retornar. \\
+$E_{11}$ & $T_{11}$ & $P_{14}\rightarrow P_0$: el cliente retorna al buffer de entrada. \\ \bottomrule
+\end{tabularx}
+\end{table}
+
+Cada fila muestra el efecto completo del disparo: las plazas a la izquierda
+pierden un token y las de la derecha ganan uno. Así quedan explícitos tanto el
+avance del cliente como la regeneración de los recursos compartidos.
+
+\subsection{Responsabilidad de hilos}
+
+La determinación de la cantidad y responsabilidad de los hilos se basa en los
+algoritmos presentados en las secciones 4.1, 4.2 y 4.3 del paper de Ventre y
+Micolini sobre sistemas S3PR modelados con Redes de Petri. Estos algoritmos
+responden preguntas diferentes:
+
+\begin{table}[H]
+    \centering
+    \caption{Preguntas que responde cada algoritmo del paper.}
+    \label{tab:algoritmos-responsabilidad}
+    \begin{tabularx}{\textwidth}{@{} l X @{}}
+        \toprule
+        \textbf{Algoritmo} & \textbf{Pregunta} \\ \midrule
+        4.1 & ¿Cuál es el máximo de hilos activos simultáneamente según los
+        marcados alcanzables de la red? \\
+        4.2 & ¿Cómo se dividen los T-invariantes en segmentos de responsabilidad
+        cuando existen caminos lineales, forks y convergencias? \\
+        4.3 & ¿Cuál es la capacidad máxima asociada a cada segmento y cuál es la
+        suma de esas capacidades? \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+La aplicación de estos algoritmos no produce automáticamente la misma
+cantidad para las tres preguntas. En nuestro caso se obtienen cinco clientes
+activos como máximo, seis segmentos lógicos y seis workers persistentes. La
+suma de las capacidades internas de los segmentos es diez bajo la convención
+de plazas frontera adoptada.
+
+% MODIFICADO: aplicación paso a paso del algoritmo 4.1.
+\subsubsection{Aplicación del algoritmo 4.1: máximo de hilos activos}
+
+El algoritmo 4.1 determina el máximo de actividad que puede expresar el modelo
+formal. Se aplica en los siguientes pasos.
+
+\paragraph{Paso 1: obtener los T-invariantes}
+
+Los cuatro T-invariantes mínimos se expresan como secuencias ordenadas de
+transiciones. La secuencia es la forma que luego utilizan los workers para
+recorrer un camino concreto:
+
+\begin{align*}
+    IT_1 &= \langle T_0,T_1,T_2,T_5,T_6,T_9,T_{10},T_{11}\rangle,\\
+    IT_2 &= \langle T_0,T_1,T_2,T_5,T_7,T_8,T_{11}\rangle,\\
+    IT_3 &= \langle T_0,T_1,T_3,T_4,T_6,T_9,T_{10},T_{11}\rangle,\\
+    IT_4 &= \langle T_0,T_1,T_3,T_4,T_7,T_8,T_{11}\rangle.
+\end{align*}
+
+Todos los invariantes comparten el ingreso $T_0,T_1$ y el retorno $T_{11}$.
+Las dos elecciones independientes son $T_2/T_3$ y $T_6/T_7$.
+
+\paragraph{Paso 2: obtener las plazas asociadas}
+
+Para cada $IT_i$ se construye $PL_i$, formado por las plazas que son pre o
+postcondición de alguna transición del invariante. A partir de la matriz de
+incidencia de esta red se obtienen:
+
+\begin{align*}
+    PL_1 ={}& \{P_0,P_1,P_2,P_3,P_4,P_5,P_6,P_9,\\
+              &\quad P_{10},P_{11},P_{13},P_{14}\},\\[0.2em]
+    PL_2 ={}& \{P_0,P_1,P_2,P_3,P_4,P_5,P_6,P_9,\\
+              &\quad P_{10},P_{12},P_{14}\},\\[0.2em]
+    PL_3 ={}& \{P_0,P_1,P_2,P_3,P_4,P_7,P_8,P_9,\\
+              &\quad P_{10},P_{11},P_{13},P_{14}\},\\[0.2em]
+    PL_4 ={}& \{P_0,P_1,P_2,P_3,P_4,P_7,P_8,P_9,\\
+              &\quad P_{10},P_{12},P_{14}\}.
+\end{align*}
+
+Estos conjuntos se calculan para cada camino. No se incorporan plazas de una
+rama que no pertenezca al T-invariante analizado.
+
+\paragraph{Paso 3: seleccionar las plazas de acción}
+
+El paper indica separar las plazas que representan clientes avanzando por el
+proceso de aquellas que representan estado idle, recursos o restricciones. Para
+esta red se tiene:
+
+\begin{align*}
+    PI_{\mathrm{idle}} &= \{P_0\},\\
+    PI_{\mathrm{recursos}} &= \{P_1,P_6,P_7,P_{10}\},\\
+    PI_{\mathrm{restricciones}} &= \{P_4\}.
+\end{align*}
+
+Por lo tanto, las plazas de acción que se consideran para medir la actividad
+son:
+
+\begin{equation}
+    PA =
+    \{P_2,P_3,P_5,P_8,P_9,P_{11},P_{12},P_{13},P_{14}\}.
+\end{equation}
+
+\paragraph{Paso 4: analizar los marcados alcanzables}
+
+El algoritmo propone observar cuántos tokens pueden encontrarse en las plazas
+de acción para los marcados alcanzables de la red. En este caso, el P-invariante
+global permite obtener ese límite sin enumerar todos los estados:
+
+\begin{equation}
+\begin{split}
+    M(P_0)+M(P_2)+M(P_3)+M(P_5)+M(P_8)+M(P_9)\\
+    +M(P_{11})+M(P_{12})+M(P_{13})+M(P_{14})=5.
+\end{split}
+\end{equation}
+
+La ecuación indica que la red conserva cinco clientes. Como $P_0$ es la plaza
+idle, los clientes que no están en $P_0$ se encuentran en alguna etapa activa
+del proceso.
+
+\paragraph{Paso 5: obtener el máximo}
+
+La suma de tokens en las plazas de acción es:
+
+\begin{equation}
+    \sum_{p\in PA}M(p)=5-M(P_0)\leq5.
+\end{equation}
+
+El máximo se alcanza cuando $P_0$ queda vacío. Por ejemplo, al ejecutar cinco
+veces el tramo \texttt{T0,T1}, los cinco clientes pueden ubicarse en $P_3$:
+
+\begin{equation}
+    M(P_3)=5,\qquad M(P_0)=0,
+\end{equation}
+
+En consecuencia, el resultado del algoritmo 4.1 es:
+
+\begin{equation}
+    H_{\mathrm{activos}}^{\max}=5.
+\end{equation}
+
+Este valor es el máximo global de clientes en plazas de acción. No determina
+la cantidad de objetos \texttt{Thread} que debe instanciar la aplicación.
+
+% MODIFICADO: aplicación del algoritmo 4.2 por caso topológico.
+\subsubsection{Aplicación del algoritmo 4.2: segmentación de responsabilidades}
+
+El algoritmo 4.2 analiza la estructura de los T-invariantes y distingue
+caminos lineales, forks y convergencias. La responsabilidad se asigna a
+segmentos con secuencias fijas. Un worker no contiene la decisión sobre qué
+rama tomar.
+
+\paragraph{Caso 1: camino lineal}
+
+Si un T-invariante es lineal y no presenta una decisión compartida con otro
+camino, sus transiciones consecutivas pueden formar un único segmento:
+
+\begin{equation}
+    S=[T_a,T_b,T_c].
+\end{equation}
+
+En nuestra red no existe un T-invariante completamente aislado. Sin embargo,
+este caso explica por qué cada tramo consecutivo de una rama se mantiene en un
+mismo worker.
+
+\paragraph{Caso 2: fork en $P_3$}
+
+Los T-invariantes se separan en $P_3$ entre las alternativas $T_2$ y $T_3$.
+Según el paper, un fork se divide en un segmento común previo y un segmento
+para cada rama posterior:
+
+\begin{align*}
+    S_A &= [T_0,T_1],\\
+    S_B &= [T_2,T_5],\\
+    S_C &= [T_3,T_4].
+\end{align*}
+
+$S_A$ termina antes de la elección. $S_B$ y $S_C$ ejecutan las ramas del
+agente superior e inferior, respectivamente. Así se evita que un worker tenga
+que programar una condición del tipo ``si ocurre algo, elegir $T_2$; si no,
+elegir $T_3$''. El monitor y la política resuelven esa elección.
+
+\paragraph{Caso 3: convergencia y nuevo fork en $P_9$}
+
+$P_9$ recibe tokens de las dos ramas de agentes y, al mismo tiempo, precede el
+conflicto entre $T_6$ y $T_7$. La convergencia en $P_9$ es de tipo OR: una ruta
+produce el token y las rutas no deben sincronizarse mediante una transición que
+consuma tokens de ambas ramas.
+
+Como no hay una secuencia común entre la llegada a $P_9$ y el segundo fork, se
+adopta $P_9$ como frontera de despacho. Las ramas posteriores quedan:
+
+\begin{align*}
+    S_D &= [T_6,T_9,T_{10}],\\
+    S_E &= [T_7,T_8].
+\end{align*}
+
+Esta asignación aplica el criterio del paper a la topología concreta. La
+decisión de tratar $P_9$ como frontera evita asignarla simultáneamente a dos
+segmentos.
+
+\paragraph{Caso 4: convergencia en $P_{14}$}
+
+El paper indica que después de una convergencia debe existir un único segmento
+común. En esta red, ambos caminos finales llegan a $P_{14}$ y comparten la
+transición de retorno:
+
+\begin{equation}
+    S_F=[T_{11}].
+\end{equation}
+
+Esto corrige una posible duplicación de $T_{11}$ dentro de las ramas de
+confirmación y cancelación. $T_{11}$ pertenece al segmento común posterior a la
+convergencia.
+
+\paragraph{Convención para las plazas frontera}
+
+Se adopta la siguiente convención para aplicar los algoritmos a esta red:
+
+\begin{itemize}
+    \item $P_3$ es la frontera entre $S_A$ y $S_B/S_C$.
+    \item $P_9$ es la frontera entre $S_B/S_C$ y $S_D/S_E$.
+    \item $P_{14}$ pertenece al segmento común $S_F$.
+    \item $P_3$ y $P_9$ continúan formando parte de $PA$ para el máximo global,
+    pero no se asignan como plazas internas de ningún segmento.
+\end{itemize}
+
+El paper define las reglas de separación en forks y convergencias, pero no
+prescribe una partición única para una plaza que es simultáneamente punto de
+convergencia y antecedente de otro fork. Por eso esta convención debe
+declararse como una decisión de aplicación.
+
+% MODIFICADO: aplicación del algoritmo 4.3 con capacidades verificables.
+\subsubsection{Aplicación del algoritmo 4.3: capacidad por segmento}
+
+Una vez definidos los segmentos, el algoritmo 4.3 se aplica en cuatro pasos:
+
+\begin{enumerate}
+    \item determinar las plazas de acción internas de cada segmento;
+    \item proyectar los marcados alcanzables sobre esas plazas;
+    \item obtener el máximo de tokens para cada segmento;
+    \item sumar las capacidades máximas individuales.
+\end{enumerate}
+
+Con la convención anterior, las plazas internas son:
+
+\begin{align*}
+    PA(S_A)&=\{P_2\}, & PA(S_B)&=\{P_5\}, & PA(S_C)&=\{P_8\},\\
+    PA(S_D)&=\{P_{11},P_{13}\}, & PA(S_E)&=\{P_{12}\}, & PA(S_F)&=\{P_{14}\}.
+\end{align*}
+
+Para cada segmento se define:
+
+\begin{equation}
+    h_i=\max_{M\in R(M_0)}
+    \left(\sum_{p\in PA(S_i)}M(p)\right).
+\end{equation}
+
+Las cotas se obtienen de los P-invariantes:
+
+\begin{table}[H]
+    \centering
+    \caption{Aplicación del algoritmo 4.3 a los segmentos.}
+    \label{tab:capacidades-por-segmento}
+    \small
+    \begin{tabularx}{\textwidth}{@{} l l c X @{}}
+        \toprule
+        \textbf{Segmento} & \textbf{Plazas internas} & $h_i$ & \textbf{Fundamento} \\ \midrule
+        $S_A$ & $P_2$ & 1 & $M(P_1)+M(P_2)=1$. \\
+        $S_B$ & $P_5$ & 1 & $M(P_5)+M(P_6)=1$. \\
+        $S_C$ & $P_8$ & 1 & $M(P_7)+M(P_8)=1$. \\
+        $S_D$ & $P_{11},P_{13}$ & 1 &
+        $M(P_{10})+M(P_{11})+M(P_{12})+M(P_{13})=1$. \\
+        $S_E$ & $P_{12}$ & 1 &
+        El mismo P-invariante de la etapa de decisión final. \\
+        $S_F$ & $P_{14}$ & 5 &
+        Cota derivada del P-invariante global de población. \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+La capacidad teórica total por responsabilidades es:
+
+\begin{equation}
+    H_{\mathrm{segmentos}}=\sum_i h_i=1+1+1+1+1+5=10.
+\end{equation}
+
+El valor $10$ es la suma de máximos calculados para cada segmento por
+separado. No es el máximo global de clientes activos, porque los máximos de
+los segmentos no tienen por qué alcanzarse en el mismo marcado.
+
+% NUEVO: workers reales y decisión de instanciación.
+\subsubsection{Workers implementados}
+
+El algoritmo 4.2 define los segmentos lógicos. La aplicación los ejecuta con
+seis workers persistentes, uno por segmento:
+
+\begin{table}[H]
+    \centering
+    \caption{Correspondencia entre segmentos y workers implementados.}
+    \label{tab:workers-responsabilidades}
+    \small
+    \begin{tabularx}{\textwidth}{@{} l l l X @{}}
+        \toprule
+        \textbf{Worker} & \textbf{Segmento} & \textbf{Path} & \textbf{Responsabilidad} \\ \midrule
+        \texttt{Thread-1} & $S_A$ & $[T_0,T_1]$ &
+        Inicia nuevas vueltas del sistema. \\
+        \texttt{Thread-2} & $S_B$ & $[T_2,T_5]$ &
+        Ejecuta la rama del agente superior. \\
+        \texttt{Thread-3} & $S_C$ & $[T_3,T_4]$ &
+        Ejecuta la rama del agente inferior. \\
+        \texttt{Thread-4} & $S_D$ & $[T_6,T_9,T_{10}]$ &
+        Ejecuta confirmación y pago. \\
+        \texttt{Thread-5} & $S_E$ & $[T_7,T_8]$ &
+        Ejecuta cancelación. \\
+        \texttt{Thread-6} & $S_F$ & $[T_{11}]$ &
+        Ejecuta el retorno común y cuenta finalizaciones. \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+Cada worker recorre repetidamente su path y solicita los disparos al monitor.
+
+\subsubsection{Relación entre el modelo y la implementación}
+
+Los primeros cinco segmentos están acotados en uno por P-invariantes asociados
+a recursos de capacidad unitaria. $S_F=[T_{11}]$ es diferente: $P_{14}$ no
+está vinculada a uno de esos recursos, por lo que su única cota es la población
+global de la red. En consecuencia, puede contener hasta cinco clientes listos
+para retirarse.
+
+Aplicado literalmente, el algoritmo 4.3 sugiere:
+
+\begin{equation}
+    1+1+1+1+1+5=10\text{ hilos}.
+\end{equation}
+
+La implementación utiliza un worker por segmento:
+
+\begin{equation}
+    1+1+1+1+1+1=6\text{ workers}.
+\end{equation}
+
+Para $S_F$ se asigna un único worker porque $T_{11}$ es inmediata y todos los
+disparos se ejecutan en exclusión mutua dentro del monitor. Agregar más workers
+no permitiría disparar $T_{11}$ en paralelo y aumentaría la competencia por el
+mutex. Esta reducción es una decisión de implementación; su efecto sobre el
+rendimiento debe comprobarse durante la ejecución.
+
+Por lo tanto, $10$ es la capacidad teórica obtenida por el algoritmo 4.3,
+mientras que $6$ es la cantidad de workers implementados. El máximo global de
+clientes activos continúa siendo $5$.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{images/image.png}
+    \caption{Figura 2: Representación gráfica de la asignación de hilos sobre la Red de Petri.}
+    \label{fig:placeholder}
+\end{figure}
+
+\section{MONITOR DE CONCURRENCIA}
+
+El monitor de concurrencia es el núcleo del sistema, responsable de coordinar el acceso de los hilos a la Red de Petri y garantizar que se respeten las reglas de exclusión mutua y sincronización. La implementación se basa en una política de señalización \textbf{Signal and Exit (SX)}.
+
+\subsection{Estructura del Monitor}
+
+El monitor centraliza cuatro responsabilidades fundamentales:
+\begin{enumerate}
+    \item \textbf{Exclusión Mutua:} Asegurar que solo un hilo a la vez opere sobre el marcado de la RdP.
+    \item \textbf{Gestión de Colas:} Administrar hilos bloqueados que esperan a que una transición se habilite.
+    \item \textbf{Semántica Temporal:} Validar que los disparos ocurran dentro de los rangos de tiempo permitidos.
+    \item \textbf{Registro y consistencia:} Registrar los disparos y comprobar los P-invariantes bajo exclusión mutua.
+\end{enumerate}
+
+Para cumplir con esto, la clase \texttt{Monitor} utiliza las siguientes estructuras internas:
+\begin{itemize}
+    \item \texttt{entry}: Un semáforo binario justo, creado con \texttt{new Semaphore(1, true)}, que actúa como el mutex de entrada al monitor. Su equidad regula el acceso al monitor, pero no aplica la prioridad de negocio.
+    \item \texttt{queues}: Una estructura que mantiene un semáforo, inicializado en 0, y un contador de hilos en espera por cada transición de la red.
+    \item \texttt{rdp}: Representación del modelo formal de la Red de Petri, que mantiene el marcado actual, las matrices de incidencia y calcula la sensibilización estructural de las transiciones.
+    \item \texttt{policy}: El componente encargado de seleccionar qué hilo bloqueado despertar durante el handoff, entre los candidatos elegibles.
+    \item \texttt{time}: Gestor de la semántica temporal.
+\end{itemize}
+
+\subsection{Mecanismo de Señalización: Signal and Exit}
+
+La implementación del monitor sigue la semántica de señalización conocida como \textbf{Signal and Exit}. En este modelo, después de un disparo, si existe un hilo bloqueado cuya transición está sensibilizada, el hilo que realizó el disparo transfiere inmediatamente la posesión lógica del mutex al hilo despertado mediante un \textit{handoff}, sin retener el control del monitor.
+
+Este enfoque se implementa a través de la clase interna \texttt{Ownership}, que modela la posesión lógica del semáforo \texttt{entry}. El método \texttt{handoff()} establece \texttt{owned = false} sin invocar \texttt{entry.release()}, manteniendo el permiso del semáforo intacto. El hilo despertado, al reanudar su ejecución desde la cola de espera de la transición, invoca \texttt{wakeFromQueue()} que establece \texttt{owned = true}, asumiendo así la posesión del mismo permiso sin necesidad de competir por él.
+
+Este enfoque tiene dos implicancias críticas en el diseño de nuestro sistema:
+
+      \begin{itemize}
+          \item \textbf{Transferencia Directa del Mutex:} El hilo despertado no necesita re-adquirir el semáforo \texttt{entry}. La posesión se transfiere a través del mecanismo de handoff, evitando que compita por el mutex con otros hilos que intenten ingresar al monitor.
+          \item \textbf{Continuidad de la Condición:} El hilo despertado retoma \texttt{fireTransition} con la posesión lógica del monitor. Como el \textit{handoff} no libera \texttt{entry}, ningún otro worker puede modificar el marcado durante la transferencia; por eso el camino de handoff no vuelve a verificar la sensibilización. La verificación se realiza cuando el hilo adquiere \texttt{entry} mediante \texttt{ownership.acquire()}.
+ \end{itemize}
+
+El monitor utiliza la \texttt{Policy} para decidir a quién despertar de forma selectiva. En lugar de un broadcast, construye la lista de transiciones sensibilizadas que tienen hilos esperando y delega en la política la selección de una de ellas. La selección se realiza en el método \texttt{selectWaiterOrRelease}: si existen candidatos elegibles, ejecuta \texttt{queues.signalOne(selectedTransition)} y transfiere la posesión mediante \texttt{ownership.handoff()}; de lo contrario, libera el mutex mediante \texttt{ownership.release()}.
+
+\subsection{Diagrama de Secuencia del Monitor}
+
+A continuación se presenta el flujo detallado de interacción entre el Worker, el Monitor y sus componentes auxiliares durante un ciclo de disparo.
+
+\begin{figure}[H]
+    \centering
+    \href{www.plantuml.com/plantuml/png/hLVHQYIt4dtlhoZyD0EsuRvUSDXDi26GIO_RdPY08SYjccdjgbMzajfUvu_ol9_W7uiaj-JM28_9aeNTdP6EwfJEgIhP7unbsaw3hAom4c53IbZIS0PNSlf4i4U5cadW23kXiTLC6M45gPLTLnMRBAbfk4TTzS93YEmzVNKRdGzoSalwC-eJO0Pkgz4HYKwCJ5au6MQU_qV60Dha87fqvAONeuFLyNC0rZaGbTLF3dI30njxqXX0bpb8Sn-duTkmsUIRLWpeTbltNuF6Qj7vIve0RNFebmadD0vy7Ju4o7KE6KcApYUq3Hy2P5jLjt3s0spSSYabStmFpAAJO1DH3qmApkm2-RFY-DN30wPs68MFhzAi5d7ggf948_JCM0PS69SWqq1WK8DG5hMUXb5mgW1ej92qFXV61-IhDLnSm8v9Wmu2a2XPzsKI6XsPNwxzygLRxfZj-jdCUIybSnc-SZnOg6D8yeHm0LPFM5KpL-CsXBd1SFU_aFjxBs8s5JZ8sQpLFP54fggCfV6nmlKE0-LN0zXhcaPuPC9UaOv8zcBEwQisBzTAQbpx35MdSK1bRvaxe_O_qQJioaRa8k7hjCInM5pegr4YCr7V-G9HebcZk9FqJyTo1m1A7yeaqdBfIIuJ02fUQh17cphFwPTLzdaibwEAN2SZZTWh9ezBbOWv_jVYFxBFUALfyBqTStwxL0yrKMGHjDZtrZS4AIlKX7VgOKBvWC0a22KwGS1HWk_EAXtt_wRARqCxgIilMrxqhVlI7Y_wreTXqYuYfB99fHucq4V5cvUYYOwzKUvf8dKQcKKNrMdzEtQ-pcm6QihXjbkW8pPhOl-dYOVTpiIawpqD0zCTumHFO7n3tWk_t8ddRwegd6oo9699feO_mXkrN71mPjvXQ7sxxJIQtZyO_COwn2gFS0gsO6tBiEsXn9BsthK6pIJjWRfRyBmTQHwCBGcs1O5RoaQSGObTQ1VKjPxjNnMEfuH2H_ZEOeg7nyZCOXRbpd4kSyaCsE1_9qYXEP3MzuLlXG4L6VWVz48Ie1bHEmgAsRwKi2BesHDqCpbvNuxFo-CJyr_Cp79g7f-RxqxEsEBnYzixk1neP1ABEthNkvx8NV4L6rCjxI-yyJCrAZcI55Pq32XfIsedHMSfiDyfb6AFC2csyD3RnLnBdjwv1KN0HkbZ_AZHeEhP04_mSancfqRI_c-7oh9FIo6siUlcSaJ-EYyIhApYVFodjw9Mk2hZP08L0xzu1ygowdqvxdQhzNSyZl5Jj3oOdS_ZS19MRLt_UVcn-UMFTNMagCjoVh-Gon8kY_VudT8jqgF4_4z8loahvELL6-PFETuMFtKosJ7bHxb3psnj3BL7s-30X19gtr8CbsFQNYFZvqOYZYiTqHkpNcItV0-jm66aICkfAeRjTpxIdYfOcVpP2SMaV5eQLPfqpA3CdCAODqpnEIpIfntK3lmhdT48HYJsPE6AencdvxyDS8m53HIJWL7ZWw3rkOyRPAaMQTJL9WXxwuNL4pg2-TU8vs-dWS4lvRzAB8vlgWykwZJ8Vm00}{\textbf{[Clic aquí para abrir el Diagrama de Secuencia]}}
+\end{figure}
+
+\subsection{Diagrama de Clases}
+El diagrama de clases de este proyecto se encuentra a continuación.
+
+\begin{figure}[H]
+    \centering
+    \href{https://plantuml.online/svg/dLXhRXl94VxFKpIqM4GEBKQsmtZDrGgW9D8W83v2qciaXc4qPuh3NirqptRtIAOtNkGGkSR-sYFu9Zb9gdfUFKCg3k8VranLJJs_ggwc5JO6TYDuf7d2MGWiYBa1m_xzpt-nbKYoc0VYo--I1Ke6cTOWBP3K4aBwim2hHQSJmzOogvWMqSwoK6W8h52oqp5tGgOSLJEpuw5w439YMnuRy3Yna63tAJ2bxKvvZ9G7Tpo2bTsZYwIIooZsloHNpT2Y2vlCmWHTN8bFmCuz4Qb2C92o5tsFgBcySyJppavW592aTiyII3QWJQTjWFtIOUmAVOcqocHuhMAbsJTZzuyuIeUW2-gVN_NF-o-HEjHQFRI9OoLjGNl-x7d_-QlEvyvXlBczergFAYW_EncciGZoSfsmRqOlny_6OwSi3sFAXNIlZ9tzOYot8lZCrlFryFR3yirinGPCIDjYB-Qta-k_VPZERqR8NoWqi9zYIZjEhbl99QZxbEl8eDGAwo6ZT--VuFEz4c5BPQ21MtYhz1qc-xJNwv7SUeVKyDrxbFtSgJm-8PS7WrnsbK9mmhXXzIkxk41OOAOkByl094-WyY4dfTpka7GhZBsO87mZq9Sv9y1wMdEjaZG6mYjARPIAWSkc7xbt1iqjCodv9eRQuEFQ4oM5nL8Ds3H_8hRUyW1AwyukX1DvpxNWw0hA3grAH51e-X_SHBv6fwYnoe-l2cPU8-IUUgNmmbfe5Mamvefh32t5H-nkJXRgyAooFFQXKNbzrDTkbePOtTD6xRj1h0mqdV1nMwJ77p4dhi5UNDyuFqIPk8DC5cvsjpXorjZMHf3xfxPwp5r_ybXbIzD5j6XQxma-aF1qftHHgPypo82AyrVtK6GzJ96o31S53bnlL4rIP4yuDAxnpn8COjADnK91hAXajofQWRuNGT5JlnOkdLRwdxAsv5FMilRa_yW2Ul30XHqhlG8dzicLtdLapYPrGnak0Rymlk9Qv87Zz8gkkGm5rTsu8X_f1OCw0liMxO6Uwq9ZgQVHyNdqWy7yGU9ys8dKzNprXa0L4fzhX2faXLvaUIfuy7E6xhU0g0l3JUeEtLVRROkAeS5OgyJL_94EgjtDaU5ypHyF7QLiKxAecr7RpPGZ83ukf_odtESp8N4s9eZ1jvxaqIhMOtN7JPvLy_Lo6n597iyb_3UTxTOC8LRj0vzEb-_6_T4hxtH1e9Q1JhaEyB0V1ZPpiyEFr0bCP837Blx7Zt4T73SYHa26t1pBL1le-8hf-X4HviQj9zyigJ0br27yUhfoWG05m3HzUWGDxJOlXrDrz4rcuybiiXvzk1gjXwWYLkKPHOCYh2EYgASyBPleAQbsW91R4LrMKv--MbdgkxRyqcEMXrsiWhkPSOD4HgiinMq1ftRP65iS_pkA87GVUJrUyYhlMWBTWCinzThNCjgDm2w1LWMCPQr6u_NHJwgi_CgfPTvW9F5ZiaT1YpFnos-OS4wdo8jHVzptS9eFp1Ag2UAxkTWuCggHwAeHOGR-uKT7fBvtSxB9BHAnKtJG1TKuR0_39vwoRhwwF9gvkiVpuNcrNu0Ew8IEu9HMKJeU217ekdrDxmtjARQ4NML9mlN-0AyWiyJb2QCU3EhetVogNuiipUQpaNku6juEPzUZ6_UoM4xcoybwydVtVaHjmpUdkK4fb0zVZsRhbNjSZbQZvO_3zMG-M_c6czMTRrmDg1b37bA9durVD4hixLCN5ncYHzXzDORhRWnXoxFOBchn-lIgYPUjhu8T17V-DyK6s_eCuO6wBrl7HVqPPhrwoRDUlPQE7gwotHHlOmvLM5ktB2CDFk8cdEzZUV6_RZ1thcKs9tehTQsctZoGFSoikgQ5hh47Tt57SL2knm9IHlU8LtzI75q4_u272rqpQT3I6HDpnkkhJCVTMxfdPzxYdzDwlSjgDH-uUqLDztVR0Kio6iiUUrhjve6RgPdFf9skLfIlSzMxlw-r78zPiV9t3jRKYt_qUgNHJkdpsTdbuK8xO8Oi2ekNSM7mOgXCgSvzGEUiyvggnTc-aE8DeKMv7hhHGGvozk3MX4hiZvZGWxtKPnQxha-gjh26CGyT0xocHo9FTI51EMjSSEv1YoqMzx3kQJctCIhLwF9E4L0TcvlL1PLCD4PBnpD8mAb1_ZWdXpyvzJhxyXilWBXNcHqmgHX7D4LS8ZK5MUmkT5-1b9QSNewFitSx4IBplViTfAvkdQws046DAdh0gFsiOYz5Gjnupvf0bCf2yUEBsbPM6LkvZO_XUSH67uKT8CcWd-K1fGpUBSG6D6VkvlCzTRngyaCmAUu92BLCbXXYM21tP6sH0qnLopbk3-Gpi6AbxdKmMOoyQ_jOtP9enbSufH-QEEuBwBtWlKvzuWnO__nF_NCYUUSEtgoU__2o_otkHt_vuRlpRtiqicuvIxLAbSxL6IY62JDVVeyLPK1jqEcW08moY5cqQHxtzSZrZSVfZW2G292VS5p5QAVQ4BK1SlGDDjtE8TWMlw6bc2Ri3lSR6dKm8PmSoj25MFtqFQMuQ7gau9f4A4EkpC092ecda8EUXGGZ9E2vWAiXbjkv5v6paHdEDe2b4yWcJDGn_WS0}{\textbf{[Clic aquí para abrir el Diagrama de Clases]}}
+\end{figure}
+
+\subsection{Flujo de Disparo de una Transición}                                                                                                                           
+
+El método principal es \texttt{fireTransition(int transition)}. Cuando un hilo intenta disparar una transición, sigue el siguiente flujo lógico:
+     \begin{enumerate}                                                                                                                                                                                                                              
+          \item \textbf{Toma del Mutex:} El hilo intenta adquirir el semáforo justo \texttt{entry}. Si está ocupado, se bloquea en ese semáforo. Si fue despertado mediante handoff, ya posee lógicamente el mutex y no necesita adquirir \texttt{entry} nuevamente.
+          \item \textbf{Verificación de Sensibilización:} Se ejecuta después de que el hilo adquiere \texttt{entry} mediante \texttt{ownership.acquire()}, ya sea al entrar por primera vez o al regresar de una espera temporal. Si el hilo retoma por un handoff, la posesión lógica ya está activa y esta verificación se omite.
+           \item \textbf{Bloqueo por Sensibilización (Wait):} Si la transición no está sensibilizada, el hilo incrementa el contador de espera, libera \texttt{entry} y se bloquea en el semáforo de la cola de esa transición. Al ser despertado mediante \texttt{signalOne}, recupera la posesión lógica con \texttt{wakeFromQueue()} y retoma el ciclo con \texttt{owned = true}, sin volver a adquirir \texttt{entry} ni repetir la verificación de sensibilización.
+          \item \textbf{Evaluación Temporal:} Si la transición está sensibilizada y el hilo posee el mutex, se consulta al objeto \texttt{TimeRestrictions}.
+           \begin{itemize}
+               \item Si todavía no alcanzó $\alpha$, el hilo libera el mutex mediante \texttt{ownership.release()}, espera mediante \texttt{awaitUntilEFT()} fuera de la sección crítica y luego vuelve al ciclo con \texttt{owned = false}; debe adquirir nuevamente \texttt{entry} antes de verificar la sensibilización.
+              \item Si alcanzó $\alpha$, continúa con el disparo. La configuración vigente utiliza semántica débil con $\beta=\infty$, por lo que no existe expiración temporal.
+          \end{itemize}
+          \item \textbf{Disparo (Fire):} Se ejecuta el disparo en la RdP, actualizando el marcado y la sensibilización. Luego se actualiza el estado temporal, se comprueban los P-invariantes, se registra el disparo y se informa a la política.
+          \item \textbf{Señalización y Salida (Signal and Exit):} Antes de salir, el monitor ejecuta el método \texttt{selectWaiterOrRelease()}. Este busca las transiciones sensibilizadas que tienen hilos esperando. Si hay candidatos, la \texttt{Policy} selecciona una, \texttt{queues.signalOne(selectedTransition)} libera un permiso de su cola y se transfiere la posesión lógica mediante \texttt{handoff()}, sin invocar \texttt{entry.release()}. Si no hay candidatos, el monitor libera el mutex mediante \texttt{ownership.release()}.
+\end{enumerate}
+
+\subsection{Independencia de la Lógica}
+
+El método \texttt{fireTransition} realiza cada solicitud de disparo. Los workers
+son agentes ``ciegos'': no inspeccionan el marcado para decidir una rama y
+solicitan únicamente las transiciones de su path fijo. Cuando el monitor debe
+despertar un waiter entre varias alternativas, consulta a \texttt{Policy}, que
+selecciona la transición de la próxima señal sin modificar el path del worker.
+
+Para coordinar la finalización, la ejecución distingue el conteo de vueltas
+iniciadas del conteo de vueltas finalizadas. El worker cuyo path comienza con
+$T_0$ incrementa \texttt{startedInvariants} antes de iniciar una nueva vuelta
+y no permite superar el objetivo de $186$ ciclos. El worker de $T_{11}$ es el
+único que incrementa \texttt{completedInvariants} al completar su path. Ambos
+contadores son atómicos y sirven para coordinar la finalización, pero no
+establecen una correspondencia entre el $T_0$ que inició una vuelta y el token
+que finalmente consume $T_{11}$, porque los tokens de una Red de Petri
+ordinaria no tienen identidad.
+
+\section{TIEMPO}
+
+Teniendo el sistema funcionando, procedemos a implementar la semántica temporal; esto es, asignar tiempo a las transiciones temporales $\{T_1, T_4, T_5, T_8, T_9, T_{10}\}$.
+
+Desarrollamos una semántica de tiempo débil (\textit{weak-time}). Esta semántica establece que una transición temporizada puede ser disparada solo si el tiempo transcurrido desde que se habilitó se encuentra en el rango temporal $[\alpha, \beta]$. Luego, en la implementación, se optó por tomar $\beta = \infty$, definiendo el intervalo operativo como $[\alpha, \infty)$. 
+
+Al dejar el extremo abierto con $\infty$, nos aseguramos de que $\alpha$ funcione simplemente como el tiempo mínimo que requiere cada tarea. Así, el sistema se vuelve mucho más flexible y capaz de absorber las demoras lógicas sin que la red se trabe o deje de funcionar.
+
+\subsection{Análisis Teórico}
+
+\paragraph{Definición de Tiempos Asignados}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{cc l}
+\toprule
+\textbf{Transición} & \textbf{Tiempo [ms]} & \textbf{Descripción} \\ \midrule
+$T_1$ & 100 & Tiempo de espera en la cola de clientes \\
+$T_4$ & 60 & Atención de agente de reservas \#1 \\
+$T_5$ & 60 & Atención de agente de reservas \#2 \\
+$T_8$ & 80 & Gestión de cancelación de reservas \\
+$T_9$ & 40 & Procesamiento del pago de la reserva \\
+$T_{10}$ & 40 & Finalización del pago y preparación del retorno \\ \bottomrule
+\end{tabular}
+\end{table}
+
+Debido a la estructura de la Red de Petri, que presenta bifurcaciones para la atención y la resolución de la reserva, el Tiempo de Ciclo teórico ($T_C$) se calcula siguiendo los caminos lógicos independientes que un cliente puede atravesar. Dados los tiempos asignados, ambos caminos resultan equivalentes en tiempo, dando como resultado el tiempo de ciclo teórico para cualquier cliente individual: $$T_C=\sum_it_{min}(T_i)=100+60+80=240\quad[\text{ms}]$$
+Este valor, bajo esta configuracion temporal, también corresponde al tiempo por invariante.
+
+A partir de esto, queda evidente que el cuello de botella del circuito es la transición $T_1$, debido a que es la transición que individualmente requiere más tiempo para ser disparada. Al funcionar el sistema como una estructura segmentada e independiente, el sistema no podrá ser más rápido que la frecuencia de disparo de $T_1$, limitando el \textit{throughput} máximo a un cliente cada $100 \text{ ms}$ en estado estacionario.
+
+\subsection{Análisis Práctico}
+
+El tiempo total teórico para procesar $N$ ejecuciones de invariantes de transición se calculó de la siguiente manera: 
+$$T_{\text{teorico}}=T_C+(N-1)\times t_{\text{bottleneck}}$$
+Donde:
+\begin{itemize}
+    \item \textbf{$T_C$}: Es el tiempo de ciclo para cualquier cliente individual.
+    \item \textbf{$N$}: La cantidad de invariantes de tiempo.
+    \item {$t_{\text{bottleneck}}$}: El tiempo de la transición mas lenta.
+\end{itemize}
+
+Para la realización de la tabla se tomaron 5 muestras de ejecuciones de cada escenario y se calculo el promedio entre ellas.
+\begin{table}[H]
+\centering
+\begin{tabular}{>{\centering\arraybackslash}p{0.02\linewidth}c>{\centering\arraybackslash}p{0.15\linewidth}>{\centering\arraybackslash}p{0.16\linewidth}c}
+\toprule
+ \#&\textbf{Escenario}& \textbf{Tiempo Teorico [ms]}& \textbf{Tiempo Practico [ms]} &\textbf{Desvio (\%)}\\ \midrule
+ 1&Tiempo balanceado& 18.740& 18.497&1,29\\ 2&Etapa final
+4 veces mas lenta& 37.360&  36.934&1,14\\
+ 3&Agentes 4
+veces mas lentos& 22.620&  22.466&0,68\\
+  4&Cola de clientes 2 veces mas rapida& 14.990& 14549&2,94\\ \bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection*{Análisis de Resultados:}
+
+\begin{itemize}
+    \item \textbf{Escenario 1 (Base):} Funciona como punto de referencia. El tiempo total de ejecución está delimitado por la transición $T_1$ ($100 \text{ ms}$), la cual actúa como el cuello de botella primario del \textit{pipeline}, dosificando el flujo de tokens hacia el resto de las etapas independientes.
+    \item \textbf{Escenario 2:} Al incrementar $T_9$ y $T_{10}$ a $160 \text{ ms}$ cada una, la sub-rama de confirmación pasa a requerir $320 \text{ ms}$ en serie. Como un porcentaje de los clientes se bifurca obligatoriamente por este camino, la etapa de cierre se convierte en el nuevo cuello de botella absoluto del sistema. Esto genera una acumulación de hilos en las variables de condición previas, duplicando el tiempo total de ejecución de la red.
+    \item \textbf{Escenario 3:} Al ralentizar simultáneamente ambos canales de atención en paralelo ($T_4 = T_5 = 240 \text{ ms}$), la capacidad de procesamiento combinada de esa etapa se reduce a la mitad de su frecuencia individual, procesando idealmente un token cada $120 \text{ ms}$. Al ser este tiempo mayor al de $T_1$, la etapa de agentes desplaza a $T_1$ como cuello de botella.
+    \item \textbf{Escenario 4:} Al reducir el tiempo de $T_1$ a la mitad ($50 \text{ ms}$), el cuello de botella original se acelera. Sin embargo, el cuello de botella del \textit{pipeline} se desplaza inmediatamente a la siguiente etapa más lenta disponible en la red (en este caso, la gestión de cancelación $T_8 = 80 \text{ ms}$ o la suma de confirmación/pago), alcanzando el límite de saturación natural de la arquitectura concurrente actual.
+\end{itemize}
+
+\section{POLÍTICAS}
+
+\subsection{Objetivo y alcance de \texttt{Policy}}
+
+La clase \texttt{Policy} concentra el criterio de selección que se aplica durante el handoff del monitor. El proyecto define los modos \texttt{NONE}, \texttt{BALANCED} y \texttt{PRIORITIZED}. La política no modifica el marcado, no calcula la sensibilización de la Red de Petri y no decide los caminos de los workers. Su intervención sobre la ejecución se limita a elegir qué transición debe recibir la próxima señal cuando el monitor tiene candidatos elegibles. La clase también mantiene los contadores que se usan para informar los resultados.
+
+La política no veta ni aplaza un disparo solicitado directamente por un worker. En cada iteración de \texttt{fireTransition}, el monitor comprueba si la transición del path fijo está sensibilizada y si puede dispararse según la restricción temporal. Si ambas condiciones se cumplen, la transición se dispara sin consultar a \texttt{Policy}.
+
+Después de un disparo exitoso, el monitor busca transiciones sensibilizadas que tengan al menos un waiter en su cola. Si la lista no está vacía, llama a \texttt{Policy.choose()}, incluso cuando contiene un único candidato. La lista contiene candidatos para despertar, no decisiones directas de disparo. El resultado identifica la cola que debe recibir una señal y no reemplaza el path del worker.
+
+\subsection{Conflictos estructurales y oportunidades reales}
+
+Un conflicto estructural aparece cuando dos transiciones comparten plazas de entrada. En esta red se distinguen los siguientes grupos:
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{l c c X}
+\toprule
+\textbf{Grupo} & \textbf{Transiciones} & \textbf{Plazas compartidas} & \textbf{Significado} \\
+Agentes & $T_2$ y $T_3$ & $P_3$ & Atención por el agente superior o inferior. \\
+Reservas & $T_6$ y $T_7$ & $P_9$, $P_{10}$ & Confirmación o cancelación de la reserva. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+La existencia de un conflicto estructural no implica que la política deba elegir en cada disparo de una de esas transiciones. El monitor construye la lista de candidatos con la condición:
+
+\begin{lstlisting}[frame=single]
+rdp.isSensitized(t) && queues.hasWaiters(t)
+\end{lstlisting}
+
+Hay una oportunidad real de resolver el conflicto de agentes cuando la lista contiene a $T_2$ y $T_3$. Para el grupo de reservas, la condición equivalente es la presencia simultánea de $T_6$ y $T_7$. Si sólo aparece una de las dos transiciones, no hay una elección proporcional para ese grupo y su residuo no se modifica.
+
+La clase mantiene un residuo para cada grupo. Si ambos pares completos aparecen en la misma lista, \texttt{activeConflictIn()} examina primero el grupo de agentes y resuelve $T_2/T_3$. En esa invocación no se actualiza el residuo de $T_6/T_7$. Esta prioridad pertenece a la implementación actual y no debe confundirse con una independencia entre grupos: los residuos son independientes, pero la selección de un grupo por invocación no lo es.
+
+\subsection{Integración con el monitor}
+
+Tras un disparo exitoso, el monitor actualiza el marcado, registra el evento, llama a \texttt{Policy.recordFire()} y construye \texttt{wakingCandidates()}. Si la lista no está vacía, \texttt{Policy.choose()} selecciona una transición, \texttt{queues.signalOne()} despierta a un waiter y el monitor realiza el handoff. Si no hay candidatos, libera \texttt{entry}.
+
+El handoff transfiere la posesión lógica sin liberar ni volver a adquirir \texttt{entry}. En los pares de conflicto, todas las transiciones son no temporizadas. Por eso, ningún otro worker modifica el marcado antes de que el waiter seleccionado retome la posesión y pueda disparar la transición en la reevaluación siguiente del ciclo.
+
+La separación de responsabilidades es directa: \texttt{RdP} determina la sensibilización, \texttt{Queues} mantiene los waiters, \texttt{Policy} elige la transición y \texttt{Monitor} realiza la señalización y el handoff.
+
+\subsection{Selección proporcional mediante residuo}
+
+En los modos \texttt{BALANCED} y \texttt{PRIORITIZED}, la selección de un conflicto completo usa un acumulador entero. El valor acumulado representa la parte de la proporción objetivo que todavía no se convirtió en una elección discreta. Para cada conflicto del grupo, el algoritmo suma el porcentaje de la transición preferida. Si alcanza $100$, selecciona esa transición y resta $100$; de lo contrario, selecciona la alternativa y conserva el residuo.
+
+El mecanismo es el siguiente:
+
+\begin{lstlisting}[frame=single]
+accumulator += preferredPercentage;
+
+if (accumulator >= 100) {
+    accumulator -= 100;
+    return preferred;
+}
+
+return alternative;
+\end{lstlisting}
+
+La secuencia no se escribe de forma manual. Surge de la acumulación y se corrige en cada decisión posterior. Si $n$ conflictos reales usan un porcentaje preferido $p$, el número $S_n$ de elecciones preferidas y el residuo $A_n$ cumplen:
+
+\begin{equation}
+    np = 100S_n + A_n, \qquad 0 \leq A_n < 100.
+\end{equation}
+
+Por lo tanto, $A_n/100$ es la fracción de una elección que queda pendiente. La cantidad observada puede apartarse momentáneamente de la ideal en menos de una elección, pero el residuo conserva esa diferencia para las decisiones siguientes.
+
+Para el conflicto de agentes en modo \texttt{PRIORITIZED}, $T_2$ es la transición preferida, $T_3$ la alternativa y $p=75$. Con residuo inicial igual a cero, se obtiene:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{c c c c}
+\toprule
+\textbf{Conflicto} & \textbf{Acumulación} & \textbf{Elección} & \textbf{Residuo} \\
+1 & $0+75=75$ & $T_3$ & 75 \\
+2 & $75+75=150$ & $T_2$ & 50 \\
+3 & $50+75=125$ & $T_2$ & 25 \\
+4 & $25+75=100$ & $T_2$ & 0 \\
+5 & $0+75=75$ & $T_3$ & 75 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+En cuatro conflictos se seleccionan tres veces $T_2$. La distribución del ejemplo es, entonces, $3/4=75\%$. La figura muestra la misma idea como una recta ideal y una escalera de decisiones enteras.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{images/bresenham_politica_75.png}
+    \caption{Acumulación de residuo para una proporción objetivo de 75/25.}
+\end{figure}
+
+\subsection{Modos \texttt{NONE}, \texttt{BALANCED} y \texttt{PRIORITIZED}}
+
+La selección efectiva depende del modo y de que exista un par completo en la lista de candidatos:
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{l X X}
+\toprule
+\textbf{Modo} & \textbf{Si hay un conflicto completo} & \textbf{Si no hay un par completo} \\
+\texttt{NONE} & Selecciona al azar entre todos los candidatos. No usa residuos. & Selecciona al azar entre todos los candidatos. \\
+\texttt{BALANCED} & Usa $50\%/50\%$ para el grupo activo. & Selecciona al azar y no modifica ningún residuo. \\
+\texttt{PRIORITIZED} & Usa $T_2/T_3=75\%/25\%$ o $T_6/T_7=80\%/20\%$, según el grupo activo. & Selecciona al azar y no modifica ningún residuo. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+En \texttt{BALANCED}, el patrón alternado surge del acumulador de $50\%$, no de una secuencia fija. En \texttt{PRIORITIZED}, las constantes privadas de \texttt{Policy.java} fijan $75\%$ para $T_2$ y $80\%$ para $T_6$; cambiarlas requiere modificar el código y recompilar. En cualquier modo, si no hay un par completo, \texttt{choose()} selecciona al azar entre los candidatos y no actualiza ningún residuo.
+
+\subsection{Resultados observados}
+
+Los resultados de las políticas sólo son comparables si se identifican el modo, la configuración y el origen de la evidencia. Para las corridas de comparación se mantuvieron la misma Red de Petri, los seis workers persistentes, el objetivo de $186$ finalizaciones y las restricciones temporales base. El modo se fija mediante el valor de \texttt{POLICY\_MODE} en \texttt{Main.java}; no se recibe como un argumento de ejecución.
+
+Las tres capturas corresponden a la salida de \texttt{Policy.printSummary()} para esa configuración, con el modo indicado en cada subfigura. El resumen distingue los disparos globales registrados por \texttt{recordFire()} de las decisiones proporcionales registradas por \texttt{recordConflictDecision()}. En \texttt{NONE} no se informa una resolución de Bresenham porque \texttt{choose()} utiliza \texttt{selectAny()}.
+
+\begin{figure}[H]
+    \centering
+
+    \begin{subfigure}{0.45\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{images/summary-balanced.png}
+        \caption{Resumen de una corrida en modo \texttt{BALANCED}.}
+        \label{fig:policy-balanced}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}{0.45\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{images/summary-prioritized.png}
+        \caption{Resumen de una corrida en modo \texttt{PRIORITIZED}.}
+        \label{fig:policy-prioritized}
+    \end{subfigure}
+
+    \vspace{0.5cm}
+
+    \begin{subfigure}{0.45\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{images/summary-none.png}
+        \caption{Resumen de una corrida en modo \texttt{NONE}.}
+        \label{fig:policy-none}
+    \end{subfigure}
+    
+    \caption{Resúmenes de las corridas en los tres modos de política.}
+    \label{fig:policy-results}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{images/timing-policy.png}
+    \caption{Influencia de la temporización sobre el margen de decisión de \texttt{Policy}.}
+    \label{fig:policy-timing}
+\end{figure}
+
+
+La temporización no altera el cálculo proporcional de Bresenham, pero sí modifica cuántas veces ambos miembros del conflicto llegan juntos a \texttt{Policy}. Por eso, la política puede respetar su objetivo dentro de las decisiones donde interviene y no reproducirlo sobre todos los disparos globales.
+
+\subsection{Alcance y limitaciones}
+
+Para interpretar las métricas conviene separar cuatro cantidades:
+
+\begin{itemize}
+    \item \textbf{Disparos globales:} todos los disparos registrados por \texttt{Policy.recordFire()}, incluidos los que no fueron precedidos por una elección entre dos ramas.
+    \item \textbf{Handoffs:} invocaciones de \texttt{Policy.choose()} después de un disparo, siempre que exista al menos un candidato. Una lista de un solo elemento también produce una invocación, pero no una decisión de conflicto.
+    \item \textbf{Oportunidades de conflicto:} invocaciones en las que aparecen completos $T_2/T_3$ o $T_6/T_7$. Sólo estas invocaciones permiten aplicar Bresenham en los modos proporcionales.
+    \item \textbf{Decisiones proporcionales y porcentaje observado:} elecciones registradas para el grupo que \texttt{activeConflictIn()} resolvió en esa invocación. Esta es la cantidad que debe compararse con los objetivos $75\%/25\%$, $80\%/20\%$ o $50\%/50\%$.
+\end{itemize}
+
+Los objetivos se comparan sobre decisiones proporcionales, no sobre disparos globales. La sensibilización, los tiempos y la disponibilidad de waiters determinan cuántas oportunidades existen. Si ambos grupos están completos en una misma invocación, la implementación resuelve primero el grupo de agentes; en modo \texttt{NONE}, los contadores específicos de decisiones proporcionales no se incrementan.
+
+\subsection{Conclusión}
+
+\texttt{Policy} selecciona una cola elegible durante el handoff, mientras el monitor conserva la exclusión mutua y actualiza la Red de Petri. Los objetivos proporcionales sólo describen los conflictos completos que llegan a \texttt{selectByPercentage()}, no todos los handoffs ni la distribución global de disparos.
+
+
+\section{ANÁLISIS DE T-INVARIANTES CON REGEX}
+
+Se utilizó la siguiente expresión regular para detectar las invariantes de transición (concatenadas como $T_0T_1T_2\dots$):
+
+\begin{lstlisting}[frame=single, basicstyle=\scriptsize\ttfamily]
+(T0)(.*?)(T1)(.*?)(?:(T2)(.*?)(T5)|(T3)(.*?)(T4))(.*?)(?:(T6)(.*?)(T9)(.*?)(T10)|(T7)(.*?)(T8))(.*?)(T11)(.*?)
+\end{lstlisting}
+
+El cual se ve expresado gráficamente en \href{https://www.debuggex.com/r/1hBY3hG9t-8TV2e8}{Debuggex}:
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{images/rdp_debuggex.png}
+\end{figure}
+
+El patrón modela el orden lógico del invariante con ambas bifurcaciones luego de la sala de espera y de la aceptación/rechazo de reserva, respectivamente; el cual corresponde a las cuatro invariantes de transición mencionadas anteriormente.
+
+El archivo \texttt{TInvariants.yaml} documenta los cuatro T-invariantes
+esperados. En la implementación actual, la expresión regular y el objetivo de
+$186$ ejecuciones están definidos directamente en Python.
+
+Aplicamos \lstinline{(.*?)}, que representa cualquier secuencia intermedia de transiciones, que luego se guardan eliminando las transiciones que ya forman parte de un invariante. El uso de ‘?’ permite que el cuantificador sea no codicioso (lazy), consumiendo lo mínimo necesario para hacer match con un invariante.
+
+Los paréntesis representan grupos ‘(...)’ que permiten reutilizar partes del
+match. El análisis repite el reemplazo hasta que no encuentra otra
+coincidencia; esto no implica que la secuencia quede vacía. El reemplazo se
+expresa en Python de la siguiente manera:
+
+\begin{lstlisting}[frame=single, basicstyle=\scriptsize\ttfamily]
+replacement = r"\g<2>\g<4>\g<6>\g<9>\g<11>\g<13>\g<15>\g<18>\g<20>\g<22>"
+\end{lstlisting}
+
+Los índices 2, 4, 6… representan solo a los interleavings. Con ‘re.subn(..., count = 1)’ se reemplaza una ocurrencia por iteración, eliminando las transiciones que componen el invariante y preservando los interleavings restantes. El conteo se obtiene repitiendo este proceso hasta que no se encuentren más coincidencias.
+
+Las bifurcaciones del modelo se representan con alternativas ‘or’ (A|B) agrupadas en ‘(?:...)’ para que se aplique sobre el tramo completo sin generar grupos capturantes extra, esto mantiene estable la numeración de grupos necesaria para el reemplazo.
+
+\subsection{Resultados Regex}
+
+Resultado de la ejecución del script de Python utilizando como entrada los logs:
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{images/regex.png}
+    \caption{Salida de ejecucion de REGEX sobre logs.}
+    \label{fig:placeholder}
+\end{figure}
+
+El analizador encuentra 186 invariantes completos. En la corrida mostrada no
+quedaron transiciones remanentes; si las hubiera, se imprimirían al final de la
+salida del analizador, no en el log original.
+
+\section{CONCLUSIONES}
+
+El trabajo implementó una simulación concurrente de la Red de Petri mediante
+seis workers persistentes con paths fijos. El monitor serializa el acceso al
+marcado y verifica la sensibilización y las restricciones temporales de cada
+transición solicitada. La política interviene durante el handoff para
+seleccionar qué hilo bloqueado despertar, sin modificar los paths ni elegir
+todos los disparos de la red.
+
+La semántica temporal establece tiempos mínimos sin expiración y permitió
+comparar tiempos de ciclo y cuellos de botella en las configuraciones evaluadas.
+Las políticas balanceadas y priorizadas actúan únicamente cuando ambas ramas
+de un conflicto son elegibles. Por eso, sus objetivos describen esas decisiones
+y no necesariamente la distribución global de disparos. La temporización
+también puede modificar la cantidad de oportunidades en las que la política
+interviene.
+
+En la corrida analizada, los chequeos de P-invariantes no registraron fallos y
+el analizador reconoció 186 secuencias compatibles con los cuatro T-invariantes,
+sin transiciones remanentes. Estos resultados respaldan la correspondencia entre
+el modelo y la implementación para la configuración evaluada.
+
+\end{document}

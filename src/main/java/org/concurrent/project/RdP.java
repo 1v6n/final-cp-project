@@ -105,6 +105,17 @@ public class RdP {
     }
 
     /**
+     * Indica si una transición está estructuralmente sensibilizada en el
+     * marcado actual.
+     *
+     * @param transition índice de la transición.
+     * @return {@code true} si la transición puede dispararse estructuralmente.
+     */
+    public boolean isSensitized(int transition) {
+        return Sensibilizadas.get(0, transition) == 1.0;
+    }
+
+    /**
      * Actualiza el estado de sensibilización de las transiciones.
      * <p>
      * Una transición se marca como sensibilizada si todas sus plazas de entrada

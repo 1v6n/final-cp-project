@@ -1,0 +1,161 @@
+@startuml
+title Monitor - Flujo general de fireTransition(t)
+
+autonumber
+hide footbox
+
+actor "Worker" as W
+participant "monitor : Monitor" as M
+participant "ownership : Ownership" as O
+participant "entry : Semaphore" as E
+participant "rdp : RdP" as R
+participant "time : TimeRestrictions" as T
+participant "queues : Queues" as Q
+participant "policy : Policy" as P
+
+W -> M : fireTransition(t)
+activate M
+M -> M : validateTransitionIndex(t)
+M -> O : new Ownership()
+activate O
+
+loop hasta disparar o ser interrumpido
+  opt ownership.isOwned() == false
+    M -> O : acquire()
+    O -> M : catchMonitor()
+    M -> E : acquire()
+    activate E
+    deactivate E
+    O -> O : owned = true
+
+    M -> R : isSensitized(t)
+    activate R
+    R --> M : boolean
+    deactivate R
+
+    opt isSensitized(t) == false
+      group waitForSensitization(t, ownership)
+        M -> Q : incrementWaitingCount(t)
+        activate Q
+        deactivate Q
+        M -> O : release()
+        opt owned == true
+          O -> M : releaseMonitor()
+          M -> E : release()
+          activate E
+          deactivate E
+          O -> O : owned = false
+        end
+        M -> Q : getSemaphoreForTransition(t).acquire()
+        activate Q
+        Q --> M : permiso recibido
+        deactivate Q
+        M -> O : wakeFromQueue()
+        O -> O : owned = true
+      end
+      note right
+        continue: vuelve al inicio del loop.
+        Como owned == true, omite acquire()
+        e isSensitized() después del handoff.
+      end note
+    end
+  end
+
+  M -> T : canFire(t)
+  activate T
+  T --> M : boolean
+  deactivate T
+
+  alt canFire(t) == true
+    group fireAndReleaseTransition(t, ownership)
+      M -> M : createFiringVector(t)
+      M -> R : fireTransition(firingVector)
+      activate R
+      R -> R : actualizar marcado y sensibilización
+      deactivate R
+      M -> R : getSensitized()
+      activate R
+      R --> M : sensibilizadas
+      deactivate R
+      M -> T: refreshTimedState(sensibilizadas, t)
+      activate T
+      deactivate T
+      M -> M : logFireResult(t)
+      M -> P : recordFire(t)
+      activate P
+      deactivate P
+
+      group selectWaiterOrRelease(ownership)
+        M -> M : wakingCandidates()
+        note right : devuelve las transiciones sensibilizadas con al menos 1 hilo esperando
+
+        alt no hay candidatos
+          M -> O : release()
+          opt owned == true
+            O -> M : releaseMonitor()
+            M -> E : release()
+            activate E
+            deactivate E
+            O -> O : owned = false
+          end
+
+        else hay candidatos reales
+          M -> P : choose(candidatos)
+          activate P
+          note right
+            Si el modo es NONE o no hay un conflicto real,
+            elige un candidato al azar.
+            Si hay conflicto, aplica Bresenham.
+          end note
+          P --> M : selectedTransition
+          deactivate P
+
+          M -> Q : signalOne(selectedTransition)
+          activate Q
+          Q -> Q : decrementWaitingCount(selectedTransition)
+          Q -> Q : getSemaphoreForTransition(selectedTransition).release()
+          deactivate Q
+          M -> O : handoff()
+          O -> O : owned = false
+        end
+      end
+    end
+
+  else canFire(t) == false (TOO_EARLY)
+    M -> O : release()
+    opt owned == true
+      O -> M : releaseMonitor()
+      M -> E : release()
+      activate E
+      deactivate E
+      O -> O : owned = false
+    end
+    M -> T : awaitUntilEFT(t)
+    activate T
+    loop hasta alcanzar EFT
+      T -> T : getRemainingToEFT(t)
+      T -> T : Thread.sleep(remainingMs)
+    end
+    T --> M : tiempo alcanzado
+    deactivate T
+    note right : continue\nvuelve al inicio del loop
+  end
+end
+
+M -> O : finally: release()
+opt owned == true
+  O -> M : releaseMonitor()
+  M -> E : release()
+  activate E
+  deactivate E
+  O -> O : owned = false
+end
+note right of O
+  No-op si owned == false
+  (después de handoff o release previo).
+end note
+deactivate O
+M --> W : true si disparó, false si interrumpido
+deactivate M
+
+@enduml

@@ -13,11 +13,13 @@ import org.concurrent.project.Policy.PolicyMode;
  */
 public class Main {
   private static final int TOTAL_RUNS = 186;
-  private static final boolean timed = false;
   /** Policy mode applied by the monitor. Change to compare behaviors. */
   private static final PolicyMode POLICY_MODE = PolicyMode.PRIORITIZED;
 
-  private record WorkerSpec(String name, List<Integer> path, boolean countsCompletion) {
+  private record WorkerSpec(
+      String name,
+      List<Integer> path,
+      boolean countsCompletion) {
   }
 
   public static void main(String[] args) {
@@ -26,7 +28,7 @@ public class Main {
     try (LogService logService = new LogService(logPath)) {
       RdP rdP = new RdP();
       Policy policy = new Policy(POLICY_MODE);
-      Monitor monitor = new Monitor(rdP, timed, logService, policy);
+      Monitor monitor = new Monitor(rdP, logService, policy);
 
       long startTime = System.currentTimeMillis();
       AtomicInteger completedInvariants = new AtomicInteger(0);
@@ -71,22 +73,28 @@ public class Main {
   }
 
   private static Thread[] createWorkers(Monitor monitor, AtomicInteger completedInvariants, AtomicInteger startedInvariants, AtomicBoolean running) {
-    List<WorkerSpec> workerSpecs = List.of(
+      List<WorkerSpec> workerSpecs = List.of(
         new WorkerSpec("Thread-1", List.of(0, 1), false),
-        new WorkerSpec("Thread-2", List.of(2), false),
-        new WorkerSpec("Thread-3", List.of(3), false),
-        new WorkerSpec("Thread-4", List.of(5), false),
-        new WorkerSpec("Thread-5", List.of(4), false),
-        new WorkerSpec("Thread-6", List.of(6, 9, 10, 11), true),
-        new WorkerSpec("Thread-7", List.of(7, 8, 11), true));
+        new WorkerSpec("Thread-2", List.of(2, 5), false),
+        new WorkerSpec("Thread-3", List.of(3, 4), false),
+        new WorkerSpec("Thread-4", List.of(6, 9, 10), false),
+        new WorkerSpec("Thread-5", List.of(7, 8), false),
+        new WorkerSpec("Thread-6", List.of(11), true));
 
     Thread[] workers = new Thread[workerSpecs.size()];
 
     for (int i = 0; i < workerSpecs.size(); i++) {
       WorkerSpec spec = workerSpecs.get(i);
       workers[i] = new Thread(
-          new Threads(spec.path(), monitor, completedInvariants, startedInvariants, TOTAL_RUNS, spec.countsCompletion(), running),
-          spec.name());
+              new Threads(
+                      spec.path(),
+                      monitor,
+                      completedInvariants,
+                      startedInvariants,
+                      TOTAL_RUNS,
+                      spec.countsCompletion(),
+                      running),
+              spec.name());
     }
 
     return workers;
